@@ -50,13 +50,43 @@ export async function updateCategory(id: number, formData: FormData) {
   }
 }
 
-export async function deleteCategory(id: number) {
+export async function deleteCategory(id: number, moveToCategoryId?: number) {
   try {
+    const category = await prisma.category.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { products: true } },
+      },
+    });
+
+    if (!category) return { error: "Kategori tidak ditemukan" };
+
+    if (category._count.products > 0) {
+      if (moveToCategoryId && moveToCategoryId !== id) {
+        await prisma.$transaction([
+          prisma.product.updateMany({
+            where: { categoryId: id },
+            data: { categoryId: moveToCategoryId },
+          }),
+          prisma.category.delete({ where: { id } }),
+        ]);
+        revalidatePath("/master/categories");
+        revalidatePath("/master/products");
+        return { success: true, reassigned: true };
+      }
+
+      return {
+        error: "HAS_PRODUCTS",
+        count: category._count.products,
+        message: `Kategori "${category.name}" masih digunakan oleh ${category._count.products} produk. Pindahkan produk ke kategori lain terlebih dahulu jika ingin menghapus.`,
+      };
+    }
+
     await prisma.category.delete({ where: { id } });
     revalidatePath("/master/categories");
     return { success: true };
   } catch {
-    return { error: "Kategori masih digunakan oleh produk, tidak bisa dihapus" };
+    return { error: "Gagal menghapus kategori" };
   }
 }
 

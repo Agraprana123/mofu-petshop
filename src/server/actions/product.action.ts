@@ -112,13 +112,73 @@ export async function updateProduct(id: number, formData: FormData) {
   }
 }
 
-export async function deleteProduct(id: number) {
+export async function toggleProductActive(id: number, isActive: boolean) {
   try {
-    await prisma.product.delete({ where: { id } });
+    await prisma.product.update({
+      where: { id },
+      data: { isActive },
+    });
     revalidatePath("/master/products");
     return { success: true };
   } catch {
-    return { error: "Produk masih memiliki data transaksi, tidak bisa dihapus" };
+    return { error: "Gagal mengubah status aktif produk" };
+  }
+}
+
+export async function deleteProduct(id: number, forceSoftDelete = false) {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            saleItems: true,
+            purchaseItems: true,
+            batches: true,
+            movements: true,
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      return { error: "Produk tidak ditemukan" };
+    }
+
+    // Jika pengguna memilih untuk soft delete (nonaktifkan)
+    if (forceSoftDelete) {
+      await prisma.product.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      revalidatePath("/master/products");
+      return { success: true, action: "soft_deleted" };
+    }
+
+    const hasRealTransactions =
+      product._count.saleItems > 0 || product._count.purchaseItems > 0;
+
+    // Jika ada faktur penjualan atau pembelian riil, tidak boleh di-hard delete
+    if (hasRealTransactions) {
+      return {
+        error: "HAS_TRANSACTIONS",
+        message:
+          "Produk memiliki riwayat transaksi (penjualan/pembelian) sehingga tidak dapat dihapus permanen agar pembukuan tidak rusak. Apakah Anda ingin menonaktifkannya saja (disembunyikan dari Kasir & Pembelian)?",
+      };
+    }
+
+    // Jika hanya memiliki saldo awal migrasi atau tidak ada transaksi penjualan/pembelian sama sekali
+    await prisma.$transaction([
+      prisma.stockMovement.deleteMany({ where: { productId: id } }),
+      prisma.stockBatch.deleteMany({ where: { productId: id } }),
+      prisma.productUnit.deleteMany({ where: { productId: id } }),
+      prisma.product.delete({ where: { id } }),
+    ]);
+
+    revalidatePath("/master/products");
+    return { success: true, action: "hard_deleted" };
+  } catch {
+    return { error: "Gagal menghapus produk" };
   }
 }
 
