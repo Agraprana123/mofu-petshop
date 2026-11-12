@@ -66,7 +66,7 @@ export default async function LowStockPage() {
       status = "OUT_OF_STOCK";
     } else if (currentStock <= 2) {
       status = "CRITICAL";
-    } else if (currentStock <= 5) {
+    } else if (currentStock < minStock) {
       status = "LOW";
     }
 

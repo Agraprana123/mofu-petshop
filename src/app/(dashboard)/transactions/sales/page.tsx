@@ -4,7 +4,7 @@ import { SalesClient } from "./client";
 export const dynamic = "force-dynamic";
 
 export default async function SalesPage() {
-  const [sales, customers, salesmen, products, units] = await Promise.all([
+  const [sales, customers, salesmen, products] = await Promise.all([
     prisma.sale.findMany({
       orderBy: { date: "desc" },
       include: {
@@ -43,9 +43,6 @@ export default async function SalesPage() {
         },
       },
     }),
-    prisma.unit.findMany({
-      orderBy: { name: "asc" },
-    }),
   ]);
 
   return (
@@ -54,7 +51,6 @@ export default async function SalesPage() {
       customers={JSON.parse(JSON.stringify(customers))}
       salesmen={JSON.parse(JSON.stringify(salesmen))}
       products={JSON.parse(JSON.stringify(products))}
-      units={JSON.parse(JSON.stringify(units))}
     />
   );
 }

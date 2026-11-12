@@ -1,7 +1,7 @@
 import { Decimal } from "@prisma/client/runtime/library";
-import type { PrismaClient, Product, Category } from "@prisma/client";
+import { prisma } from "@/lib/db";
 
-type Tx = Omit<PrismaClient, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
+export type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
  * Ambil margin efektif suatu produk (persen).

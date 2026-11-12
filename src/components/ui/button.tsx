@@ -4,25 +4,26 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87482D]/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold transition-all duration-150 select-none cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#87482D]/15 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-[#87482D] text-white hover:bg-[#6d3a24] shadow-sm",
-        destructive: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
+        default:
+          "bg-[#87482D] text-white shadow-md shadow-[#87482D]/20 hover:bg-[#6d3a24] hover:shadow-lg hover:shadow-[#87482D]/25",
+        destructive:
+          "bg-red-600 text-white shadow-md shadow-red-600/20 hover:bg-red-700",
         outline:
-          "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50",
+          "border border-zinc-200 bg-white text-zinc-700 shadow-xs hover:border-zinc-300 hover:bg-zinc-50",
         secondary:
-          "bg-zinc-100 text-zinc-900 hover:bg-zinc-200",
-        ghost:
-          "hover:bg-zinc-100 text-zinc-700",
+          "bg-[#87482D]/8 text-[#87482D] hover:bg-[#87482D]/12",
+        ghost: "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
         link: "text-[#87482D] underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3 text-xs",
-        lg: "h-11 rounded-lg px-8",
-        icon: "h-10 w-10",
+        default: "h-11 px-4 py-2",
+        sm: "h-9 rounded-lg px-3 text-xs",
+        lg: "h-12 rounded-xl px-6 text-[15px]",
+        icon: "h-10 w-10 rounded-xl",
       },
     },
     defaultVariants: {

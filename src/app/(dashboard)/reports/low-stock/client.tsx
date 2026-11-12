@@ -209,10 +209,10 @@ export function LowStockClient({
               onChange={(e) => setLevelFilter(e.target.value)}
               className="h-10 rounded-xl max-w-xs bg-white"
             >
-              <option value="ALL_LOW">Semua Kritis & Menipis (≤ 5)</option>
+              <option value="ALL_LOW">Semua Kritis & Menipis (&lt; 5)</option>
               <option value="OUT_OF_STOCK">Habis Total (0 Stok)</option>
               <option value="CRITICAL">Kritis Gawat (1 - 2 Stok)</option>
-              <option value="LOW">Menipis (3 - 5 Stok)</option>
+              <option value="LOW">Menipis (3 - 4 Stok)</option>
               <option value="ALL">Tampilkan Seluruh Produk</option>
             </Select>
           </div>
@@ -266,7 +266,7 @@ export function LowStockClient({
                               ? "bg-red-600 text-white"
                               : item.currentStock <= 2
                               ? "bg-red-100 text-red-800 border border-red-200"
-                              : item.currentStock <= 5
+                              : item.currentStock < 5
                               ? "bg-amber-100 text-amber-800 border border-amber-200"
                               : "bg-emerald-100 text-emerald-800"
                           }`}

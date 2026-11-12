@@ -165,20 +165,23 @@ model Purchase {
 }
 
 model PurchaseItem {
-  id          Int         @id @default(autoincrement())
-  purchaseId  Int         @map("purchase_id")
-  productId   Int         @map("product_id")
-  unitId      Int         @map("unit_id")
-  qty         Decimal     @db.Decimal(18, 3)
-  unitCost    Decimal     @map("unit_cost") @db.Decimal(18, 2)
-  qtyBase     Decimal     @map("qty_base") @db.Decimal(18, 3)
-  costPerBase Decimal     @map("cost_per_base") @db.Decimal(18, 4)
-  subtotal    Decimal     @db.Decimal(18, 2)
+  id               Int         @id @default(autoincrement())
+  purchaseId       Int         @map("purchase_id")
+  productId        Int         @map("product_id")
+  unitId           Int         @map("unit_id")
+  qty              Decimal     @db.Decimal(18, 3)
+  unitCost         Decimal     @map("unit_cost") @db.Decimal(18, 2)
+  qtyBase          Decimal     @map("qty_base") @db.Decimal(18, 3)
+  costPerBase      Decimal     @map("cost_per_base") @db.Decimal(18, 4)
+  marginPercent    Decimal     @default(0) @map("margin_percent") @db.Decimal(7, 2)
+  sellPricePerUnit Decimal     @default(0) @map("sell_price_per_unit") @db.Decimal(18, 2)
+  sellPricePerBase Decimal     @default(0) @map("sell_price_per_base") @db.Decimal(18, 4)
+  subtotal         Decimal     @db.Decimal(18, 2)
 
-  purchase    Purchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product     Product     @relation(fields: [productId], references: [id])
-  unit        Unit        @relation(fields: [unitId], references: [id])
-  batch       StockBatch?
+  purchase         Purchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product          Product     @relation(fields: [productId], references: [id])
+  unit             Unit        @relation(fields: [unitId], references: [id])
+  batch            StockBatch?
 
   @@map("purchase_items")
 }
@@ -186,13 +189,15 @@ model PurchaseItem {
 // ───────────── Stok (inti FIFO) ─────────────
 
 model StockBatch {
-  id             Int      @id @default(autoincrement())
-  productId      Int      @map("product_id")
-  purchaseItemId Int?     @unique @map("purchase_item_id")
-  qtyIn          Decimal  @map("qty_in") @db.Decimal(18, 3)
-  qtyRemaining   Decimal  @map("qty_remaining") @db.Decimal(18, 3)
-  costPerBase    Decimal  @map("cost_per_base") @db.Decimal(18, 4)
-  receivedAt     DateTime @default(now()) @map("received_at")
+  id               Int             @id @default(autoincrement())
+  productId        Int             @map("product_id")
+  purchaseItemId   Int?            @unique @map("purchase_item_id")
+  qtyIn            Decimal         @map("qty_in") @db.Decimal(18, 3)
+  qtyRemaining     Decimal         @map("qty_remaining") @db.Decimal(18, 3)
+  costPerBase      Decimal         @map("cost_per_base") @db.Decimal(18, 4)
+  marginPercent    Decimal         @default(0) @map("margin_percent") @db.Decimal(7, 2)
+  sellPricePerBase Decimal         @default(0) @map("sell_price_per_base") @db.Decimal(18, 4)
+  receivedAt       DateTime        @default(now()) @map("received_at")
 
   product        Product         @relation(fields: [productId], references: [id])
   purchaseItem   PurchaseItem?   @relation(fields: [purchaseItemId], references: [id])

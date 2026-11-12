@@ -1,101 +1,214 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import {
+  ArrowRight,
+  BarChart3,
+  Boxes,
+  Eye,
+  EyeOff,
+  Loader2,
+  PawPrint,
+  ShieldCheck,
+  ShoppingCart,
+} from "lucide-react";
 import { loginAction, type LoginState } from "@/server/actions/auth.action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PawPrint, Loader2 } from "lucide-react";
+
+const FEATURES = [
+  {
+    icon: ShoppingCart,
+    title: "Kasir & penjualan FIFO",
+    description: "Harga jual otomatis mengikuti batch stok tertua.",
+  },
+  {
+    icon: Boxes,
+    title: "Stok selalu terpantau",
+    description: "Notifikasi stok kritis dan riwayat pergerakan barang.",
+  },
+  {
+    icon: BarChart3,
+    title: "Laporan siap pakai",
+    description: "Omzet, profit, fast moving, dan slow moving.",
+  },
+];
 
 export function LoginForm() {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(
     loginAction,
     {}
   );
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] px-4">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#87482D]/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[#87482D]/5 rounded-full blur-3xl" />
-      </div>
-
-      <Card className="w-full max-w-md relative z-10 border-zinc-200/80 bg-white shadow-xl shadow-zinc-900/5 rounded-2xl">
-        <CardHeader className="text-center pb-2 pt-8">
-          {/* Logo */}
-          <div className="mx-auto mb-4 w-16 h-16 bg-[#87482D] rounded-2xl flex items-center justify-center shadow-lg shadow-[#87482D]/25">
-            <PawPrint className="w-8 h-8 text-white" />
+    <div className="min-h-screen lg:grid lg:grid-cols-[1.05fr_1fr]">
+      {/* Brand panel */}
+      <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#87482D] via-[#7c4229] to-[#5a2f1e] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -right-32 -top-32 size-[28rem] rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute -bottom-40 -left-24 size-[26rem] rounded-full bg-black/15 blur-3xl" />
+          <div className="absolute right-10 top-1/2 hidden -translate-y-1/2 rotate-12 opacity-[0.06] xl:block">
+            <PawPrint className="size-96" />
           </div>
-          <CardTitle className="text-2xl font-bold text-zinc-900 tracking-tight">
-            MOFU Petshop & Care
-          </CardTitle>
-          <CardDescription className="text-zinc-500 mt-1">
-            Masuk ke sistem untuk melanjutkan
-          </CardDescription>
-        </CardHeader>
+        </div>
 
-        <CardContent className="p-8 pt-4">
-          {/* Error message */}
+        <div className="relative flex items-center gap-3">
+          <div className="grid size-12 place-items-center rounded-2xl bg-[#FBF7F3] text-[#87482D] shadow-lg shadow-black/15">
+            <PawPrint className="size-6" />
+          </div>
+          <div>
+            <p className="font-display text-lg font-bold leading-tight">MOFU</p>
+            <p className="text-[11px] font-medium text-white/60">
+              Petshop &amp; Care
+            </p>
+          </div>
+        </div>
+
+        <div className="relative max-w-lg py-12">
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 ring-1 ring-white/15">
+            <span className="size-1.5 rounded-full bg-emerald-300" />
+            Sistem Kasir &amp; Inventori
+          </span>
+          <h1 className="mt-5 font-display text-4xl font-bold leading-[1.15] tracking-tight xl:text-[42px]">
+            Kelola petshop lebih rapi dalam satu tempat.
+          </h1>
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-white/65">
+            Mulai dari transaksi kasir, stok FIFO, hingga laporan penjualan —
+            semua tercatat otomatis dan mudah ditelusuri.
+          </p>
+
+          <ul className="mt-8 space-y-4">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <li key={feature.title} className="flex items-start gap-3.5">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-white ring-1 ring-white/15">
+                    <Icon className="size-5" />
+                  </span>
+                  <span>
+                    <span className="block text-[13px] font-semibold text-white">
+                      {feature.title}
+                    </span>
+                    <span className="mt-0.5 block text-[12px] leading-relaxed text-white/55">
+                      {feature.description}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="relative flex items-center gap-2 text-[11px] text-white/45">
+          <ShieldCheck className="size-3.5" />
+          © {new Date().getFullYear()} MOFU Petshop &amp; Care
+        </div>
+      </section>
+
+      {/* Form panel */}
+      <section className="relative flex min-h-screen flex-col justify-center px-5 py-10 sm:px-8 lg:min-h-0 lg:px-12">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -right-24 -top-24 size-72 rounded-full bg-[#87482D]/6 blur-3xl" />
+        </div>
+
+        <div className="relative mx-auto w-full max-w-sm animate-enter">
+          {/* Mobile brand */}
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <div className="grid size-12 place-items-center rounded-2xl bg-[#87482D] text-white shadow-lg shadow-[#87482D]/25">
+              <PawPrint className="size-6" />
+            </div>
+            <div>
+              <p className="font-display text-lg font-bold leading-tight text-zinc-900">
+                MOFU
+              </p>
+              <p className="text-[11px] font-medium text-zinc-400">
+                Petshop &amp; Care
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="font-display text-[26px] font-bold tracking-tight text-zinc-900">
+              Masuk ke akun
+            </h2>
+            <p className="mt-1.5 text-sm text-zinc-500">
+              Gunakan email dan password yang terdaftar untuk melanjutkan.
+            </p>
+          </div>
+
           {state.error && (
-            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm text-center font-medium">
+            <div
+              role="alert"
+              className="mt-6 animate-pop rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-medium text-red-700"
+            >
               {state.error}
             </div>
           )}
 
-          <form action={formAction} className="space-y-4">
+          <form action={formAction} className="mt-7 space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-zinc-700 font-medium">
-                Email
-              </Label>
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
-                placeholder="admin@mofu.com"
+                placeholder="nama@mofu.com"
                 required
                 autoComplete="email"
-                className="bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:ring-[#87482D]/20 focus:border-[#87482D] h-11 rounded-xl"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-zinc-700 font-medium">
-                Password
-              </Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-                className="bg-white border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:ring-[#87482D]/20 focus:border-[#87482D] h-11 rounded-xl"
-              />
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  required
+                  autoComplete="current-password"
+                  className="pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={
+                    showPassword ? "Sembunyikan password" : "Tampilkan password"
+                  }
+                  className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
-            <Button
-              type="submit"
-              className="w-full h-11 text-base bg-[#87482D] hover:bg-[#6d3a24] text-white shadow-sm shadow-[#87482D]/25 rounded-xl font-semibold mt-2"
-              disabled={isPending}
-            >
+            <Button type="submit" size="lg" className="w-full" disabled={isPending}>
               {isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Masuk...
+                  <Loader2 className="size-4 animate-spin" />
+                  Memproses...
                 </>
               ) : (
-                "Masuk"
+                <>
+                  Masuk
+                  <ArrowRight className="size-4" />
+                </>
               )}
             </Button>
           </form>
 
-          <p className="text-center text-xs text-zinc-400 mt-6">
-            © 2024 MOFU Petshop & Care. All rights reserved.
+          <p className="mt-8 text-center text-[11px] leading-relaxed text-zinc-400 lg:hidden">
+            © {new Date().getFullYear()} MOFU Petshop &amp; Care
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </div>
   );
 }

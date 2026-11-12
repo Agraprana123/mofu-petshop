@@ -10,8 +10,8 @@ import {
   Trash2,
   Calendar,
   Truck,
-  Hash,
   AlertCircle,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -216,112 +216,210 @@ export function PurchasesClient({
     });
   }
 
+  const totalSpend = purchases.reduce(
+    (sum, purchase) => sum + Number(purchase.total),
+    0
+  );
+  const now = new Date();
+  const monthSpend = purchases
+    .filter((purchase) => {
+      const date = new Date(purchase.date);
+      return (
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear()
+      );
+    })
+    .reduce((sum, purchase) => sum + Number(purchase.total), 0);
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="page-enter space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">
-            Faktur Pembelian
-          </h1>
-          <p className="text-zinc-500 mt-1 text-sm">
-            Catat stok masuk dari supplier. Setiap pembelian otomatis membuat Batch FIFO baru.
-          </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3.5">
+          <div className="hidden size-12 shrink-0 place-items-center rounded-2xl bg-[#87482D]/10 text-[#87482D] sm:grid">
+            <FileText className="size-6" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-zinc-900">
+              Faktur Pembelian
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Catat stok masuk dari supplier dan buat batch FIFO baru.
+            </p>
+          </div>
         </div>
-        <Button
-          onClick={openCreateModal}
-          className="bg-[#87482D] hover:bg-[#6d3a24] text-white shadow-sm shadow-[#87482D]/20"
-        >
-          <Plus className="w-4 h-4" />
+        <Button onClick={openCreateModal} className="h-11 sm:self-center">
+          <Plus className="size-4" />
           Faktur Pembelian Baru
         </Button>
       </div>
 
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          {
+            label: "Total Faktur",
+            value: purchases.length.toLocaleString("id-ID"),
+            icon: FileText,
+            tone: "bg-[#87482D]/10 text-[#87482D]",
+          },
+          {
+            label: "Total Belanja",
+            value: `Rp ${totalSpend.toLocaleString("id-ID")}`,
+            icon: Wallet,
+            tone: "bg-emerald-50 text-emerald-600",
+          },
+          {
+            label: "Bulan Ini",
+            value: `Rp ${monthSpend.toLocaleString("id-ID")}`,
+            icon: Calendar,
+            tone: "bg-sky-50 text-sky-600",
+          },
+          {
+            label: "Supplier",
+            value: suppliers.length.toLocaleString("id-ID"),
+            icon: Truck,
+            tone: "bg-amber-50 text-amber-600",
+          },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <div
+              key={item.label}
+              className="rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-xs"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-zinc-400">
+                  {item.label}
+                </span>
+                <span
+                  className={`grid size-8 place-items-center rounded-lg ${item.tone}`}
+                >
+                  <Icon className="size-4" />
+                </span>
+              </div>
+              <p className="mt-2 font-display text-lg font-bold tracking-tight text-zinc-900">
+                {item.value}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Main Table Card */}
-      <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(24,25,26,0.04),0_16px_40px_-32px_rgba(24,25,26,0.25)]">
         {/* Search header */}
-        <div className="p-4 border-b border-zinc-100 flex items-center justify-between gap-4">
-          <div className="relative max-w-sm w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+        <div className="flex flex-col gap-3 border-b border-zinc-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
             <Input
               placeholder="Cari no faktur atau supplier..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-10 rounded-xl"
+              className="pl-9"
             />
           </div>
-          <span className="text-xs text-zinc-400 font-medium whitespace-nowrap">
+          <span className="whitespace-nowrap text-[11px] font-medium text-zinc-400">
             {filtered.length} transaksi pembelian
           </span>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 text-left text-zinc-400 text-xs uppercase tracking-wider font-semibold">
-                <th className="px-5 py-3.5">#</th>
-                <th className="px-5 py-3.5">No Faktur</th>
-                <th className="px-5 py-3.5">Supplier</th>
-                <th className="px-5 py-3.5">Tanggal</th>
-                <th className="px-5 py-3.5">Ref. Supplier</th>
-                <th className="px-5 py-3.5 text-center">Jumlah Item</th>
-                <th className="px-5 py-3.5 text-right">Total Pembelian</th>
-                <th className="px-5 py-3.5 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-zinc-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                    Belum ada transaksi faktur pembelian
-                  </td>
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center px-5 py-16 text-center">
+            <span className="grid size-14 place-items-center rounded-2xl bg-zinc-100 text-zinc-400">
+              <FileText className="size-6" />
+            </span>
+            <p className="mt-4 text-sm font-semibold text-zinc-700">
+              Belum ada faktur pembelian
+            </p>
+            <p className="mt-1 max-w-xs text-xs text-zinc-400">
+              Catat pembelian pertama untuk menambah stok dan harga jual batch.
+            </p>
+            <button
+              onClick={openCreateModal}
+              className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#87482D] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#6d3a24]"
+            >
+              <Plus className="size-3.5" />
+              Buat Faktur
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50/60 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400">
+                  <th className="px-5 py-3">#</th>
+                  <th className="px-5 py-3">No Faktur</th>
+                  <th className="px-5 py-3">Supplier</th>
+                  <th className="px-5 py-3">Tanggal</th>
+                  <th className="px-5 py-3">Ref. Supplier</th>
+                  <th className="px-5 py-3 text-center">Jumlah Item</th>
+                  <th className="px-5 py-3 text-right">Total Pembelian</th>
+                  <th className="px-5 py-3 text-right">Aksi</th>
                 </tr>
-              ) : (
-                filtered.map((p, i) => (
-                  <tr key={p.id} className="hover:bg-zinc-50/70 transition-colors">
-                    <td className="px-5 py-3.5 text-zinc-400 text-xs">{i + 1}</td>
-                    <td className="px-5 py-3.5 font-bold text-zinc-900 font-mono text-xs">
-                      {p.invoiceNo}
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {filtered.map((p, i) => (                  <tr
+                    key={p.id}
+                    onClick={() => {
+                      setSelectedPurchase(p);
+                      setDetailModalOpen(true);
+                    }}
+                    className="cursor-pointer transition-colors hover:bg-zinc-50/80"
+                  >
+                    <td className="px-5 py-3.5 text-xs text-zinc-400">
+                      {i + 1}
                     </td>
-                    <td className="px-5 py-3.5 font-medium text-zinc-800">
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="grid size-8 place-items-center rounded-lg bg-[#87482D]/8 text-[#87482D]">
+                          <FileText className="size-3.5" />
+                        </span>
+                        <span className="font-mono text-[11px] font-bold text-zinc-900">
+                          {p.invoiceNo}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-800">
                       {p.supplier.name}
                     </td>
-                    <td className="px-5 py-3.5 text-zinc-500 text-xs">
+                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">
                       {new Date(p.date).toLocaleDateString("id-ID", {
                         day: "numeric",
                         month: "short",
                         year: "numeric",
                       })}
                     </td>
-                    <td className="px-5 py-3.5 text-zinc-500 text-xs">
+                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">
                       {p.supplierRef || "-"}
                     </td>
-                    <td className="px-5 py-3.5 text-center text-zinc-600 text-xs font-semibold">
+                    <td className="px-5 py-3.5 text-center text-[12px] font-semibold text-zinc-600">
                       {p.items.length} Barang
                     </td>
-                    <td className="px-5 py-3.5 text-right font-bold text-zinc-900">
+                    <td className="px-5 py-3.5 text-right text-[13px] font-bold tabular-nums text-zinc-900">
                       Rp {Number(p.total).toLocaleString("id-ID")}
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <button
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setSelectedPurchase(p);
                           setDetailModalOpen(true);
                         }}
-                        className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-[#87482D] transition-colors"
+                        aria-label={`Lihat detail ${p.invoiceNo}`}
+                        className="grid size-9 place-items-center justify-self-end rounded-xl text-zinc-400 transition-colors hover:bg-[#87482D]/8 hover:text-[#87482D]"
                         title="Lihat Detail"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="size-4" />
                       </button>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Modal Buat Pembelian Baru */}

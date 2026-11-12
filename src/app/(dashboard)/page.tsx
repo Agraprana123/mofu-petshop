@@ -24,6 +24,7 @@ export default async function DashboardPage() {
     totalSales,
     totalPurchases,
     todaySales,
+    todaySalesCount,
     recentSales,
     lowStockProducts,
     lowStockCount,
@@ -40,12 +41,17 @@ export default async function DashboardPage() {
         createdAt: { gte: todayStart, lte: todayEnd },
       },
     }),
+    prisma.sale.count({
+      where: {
+        createdAt: { gte: todayStart, lte: todayEnd },
+      },
+    }),
     prisma.sale.findMany({
       take: 5,
       orderBy: { createdAt: "desc" },
       include: { customer: true },
     }),
-    // Produk dengan stok rendah (total qtyRemaining < 10)
+    // Produk dengan stok rendah (total qtyRemaining < 5)
     prisma.$queryRaw<{ product_id: number; name: string; code: string; total_remaining: number; base_unit_code: string }[]>`
       SELECT p.id as product_id, p.name, p.code,
              COALESCE(SUM(sb.qty_remaining), 0)::float as total_remaining,
@@ -55,7 +61,7 @@ export default async function DashboardPage() {
       LEFT JOIN units u ON u.id = p.base_unit_id
       WHERE p.is_active = true
       GROUP BY p.id, p.name, p.code, u.code
-      HAVING COALESCE(SUM(sb.qty_remaining), 0) < 10
+      HAVING COALESCE(SUM(sb.qty_remaining), 0) < 5
       ORDER BY total_remaining ASC
       LIMIT 5
     `,
@@ -67,7 +73,7 @@ export default async function DashboardPage() {
         LEFT JOIN stock_batches sb ON sb.product_id = p.id
         WHERE p.is_active = true
         GROUP BY p.id
-        HAVING COALESCE(SUM(sb.qty_remaining), 0) < 10
+        HAVING COALESCE(SUM(sb.qty_remaining), 0) < 5
       ) sub
     `,
   ]);
@@ -82,6 +88,12 @@ export default async function DashboardPage() {
 
   const todaySalesTotal = Number(todaySales._sum?.total ?? 0);
   const totalLowStock = lowStockCount[0]?.count ?? 0;
+  const todayLabel = new Date().toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   if (session.role === "ADMIN") {
     return (
@@ -89,6 +101,8 @@ export default async function DashboardPage() {
         session={session}
         stats={stats}
         todaySalesTotal={todaySalesTotal}
+        todaySalesCount={todaySalesCount}
+        todayLabel={todayLabel}
         recentSales={JSON.parse(JSON.stringify(recentSales))}
         lowStockProducts={JSON.parse(JSON.stringify(lowStockProducts))}
         lowStockCount={totalLowStock}
@@ -102,6 +116,8 @@ export default async function DashboardPage() {
       session={session}
       stats={stats}
       todaySalesTotal={todaySalesTotal}
+      todaySalesCount={todaySalesCount}
+      todayLabel={todayLabel}
       recentSales={JSON.parse(JSON.stringify(recentSales))}
     />
   );

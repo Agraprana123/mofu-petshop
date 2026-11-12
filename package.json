@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed.ts",
-    "demo": "tsx scripts/demo-fifo.ts"
+    "data:import": "tsx scripts/import-real-products.ts",
+    "data:reset": "tsx scripts/reset-demo-data.ts --yes"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
