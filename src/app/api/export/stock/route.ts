@@ -23,7 +23,7 @@ export async function GET() {
     });
 
     const csvRows: string[] = [
-      "No,Kode Produk,Nama Produk,Kategori,Satuan Dasar,Total Stok,Harga Modal Terakhir,Margin (%),Estimasi Harga Jual",
+      "No,Kode Produk,Nama Produk,Kategori,Satuan Dasar,Total Stok,Harga Beli,Margin (%),Harga Jual",
     ];
 
     products.forEach((p, index) => {
@@ -32,11 +32,20 @@ export async function GET() {
         0
       );
       const activeBatch = p.batches[0];
-      const cost = activeBatch ? Number(activeBatch.costPerBase) : 0;
+      const cost =
+        p.buyPrice && Number(p.buyPrice) > 0
+          ? Number(p.buyPrice)
+          : activeBatch
+          ? Number(activeBatch.costPerBase)
+          : 0;
       const margin = p.marginPercent
         ? Number(p.marginPercent)
         : Number(p.category.defaultMarginPercent);
-      const sellPrice = cost > 0 ? Math.round(cost * (1 + margin / 100)) : 0;
+      const derivedSell = cost > 0 ? Math.round(cost * (1 + margin / 100)) : 0;
+      const sellPrice =
+        p.sellPrice && Number(p.sellPrice) > 0
+          ? Math.round(Number(p.sellPrice))
+          : derivedSell;
 
       const safeName = `"${p.name.replace(/"/g, '""')}"`;
       const safeCat = `"${p.category.name.replace(/"/g, '""')}"`;

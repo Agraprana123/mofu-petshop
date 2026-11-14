@@ -19,6 +19,12 @@ export async function createSaleAction(input: CreateSaleInput): Promise<ActionRe
     if (!item.productId || !item.unitId || Number(item.qty) <= 0) {
       return { error: "Data barang tidak valid atau jumlah qty tidak boleh 0." };
     }
+    if (
+      item.unitPrice != null &&
+      (!Number.isFinite(item.unitPrice) || item.unitPrice < 0)
+    ) {
+      return { error: "Harga jual tidak boleh negatif." };
+    }
   }
 
   try {

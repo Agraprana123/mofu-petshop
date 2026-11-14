@@ -45,12 +45,31 @@ export default async function SalesPage() {
     }),
   ]);
 
+  const productsWithPrices = products.map((p) => {
+    const activeBatch = p.batches[0];
+    const margin = p.marginPercent ?? p.category.defaultMarginPercent;
+    let fallbackSellPrice = 0;
+    if (activeBatch) {
+      if (Number(activeBatch.sellPricePerBase) > 0) {
+        fallbackSellPrice = Number(activeBatch.sellPricePerBase);
+      } else if (Number(activeBatch.costPerBase) > 0) {
+        fallbackSellPrice = Math.round(
+          Number(activeBatch.costPerBase) * (1 + Number(margin) / 100)
+        );
+      }
+    }
+    return {
+      ...p,
+      sellPrice: fallbackSellPrice > 0 ? fallbackSellPrice : null,
+    };
+  });
+
   return (
     <SalesClient
       sales={JSON.parse(JSON.stringify(sales))}
       customers={JSON.parse(JSON.stringify(customers))}
       salesmen={JSON.parse(JSON.stringify(salesmen))}
-      products={JSON.parse(JSON.stringify(products))}
+      products={JSON.parse(JSON.stringify(productsWithPrices))}
     />
   );
 }

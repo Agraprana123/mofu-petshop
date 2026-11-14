@@ -15,7 +15,13 @@ export default async function ProfitReportPage() {
   });
 
   const records = saleItems.map((item) => {
-    const revenue = Number(item.subtotal);
+    // Diskon faktur dialokasikan proporsional ke tiap item agar laba bersih akurat.
+    const saleSubtotal = Number(item.sale.subtotal);
+    const saleDiscount = Number(item.sale.discountAmount);
+    const itemRevenue = Number(item.subtotal);
+    const itemDiscount =
+      saleSubtotal > 0 ? (itemRevenue / saleSubtotal) * saleDiscount : 0;
+    const revenue = itemRevenue - itemDiscount;
     const cogs = item.allocations.reduce(
       (sum, a) => sum + Number(a.qtyBase) * Number(a.costPerBase),
       0

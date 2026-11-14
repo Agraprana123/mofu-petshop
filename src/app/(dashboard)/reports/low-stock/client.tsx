@@ -264,9 +264,9 @@ export function LowStockClient({
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
                             item.currentStock === 0
                               ? "bg-red-600 text-white"
-                              : item.currentStock <= 2
+                              : item.currentStock <= item.minStock * 0.5
                               ? "bg-red-100 text-red-800 border border-red-200"
-                              : item.currentStock < 5
+                              : item.currentStock < item.minStock
                               ? "bg-amber-100 text-amber-800 border border-amber-200"
                               : "bg-emerald-100 text-emerald-800"
                           }`}

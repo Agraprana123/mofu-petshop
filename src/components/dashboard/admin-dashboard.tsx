@@ -44,11 +44,10 @@ interface AdminDashboardProps {
     code: string;
     total_remaining: number;
     base_unit_code: string;
+    min_stock: number;
   }[];
   lowStockCount: number;
 }
-
-const MIN_STOCK = 5;
 
 export function AdminDashboard({
   session,
@@ -385,7 +384,11 @@ export function AdminDashboard({
                   const stock = Math.floor(product.total_remaining);
                   const percent = Math.max(
                     4,
-                    Math.min(100, (product.total_remaining / MIN_STOCK) * 100)
+                    Math.min(
+                      100,
+                      (product.total_remaining / Math.max(product.min_stock, 1)) *
+                        100
+                    )
                   );
                   const critical = stock === 0;
 
@@ -419,7 +422,7 @@ export function AdminDashboard({
                         />
                       </div>
                       <p className="mt-1 text-[10px] text-zinc-400">
-                        Minimum {MIN_STOCK} {product.base_unit_code}
+                        Minimum {product.min_stock} {product.base_unit_code}
                       </p>
                     </div>
                   );

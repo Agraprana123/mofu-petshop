@@ -263,6 +263,7 @@ async function main() {
         name: item.name.trim(),
         categoryId: catId,
         baseUnitId: unitId,
+        minStock: new Decimal(item.minStock ?? 5),
         isActive: true,
       },
       create: {
@@ -270,6 +271,7 @@ async function main() {
         name: item.name.trim(),
         categoryId: catId,
         baseUnitId: unitId,
+        minStock: new Decimal(item.minStock ?? 5),
         isActive: true,
       },
     });

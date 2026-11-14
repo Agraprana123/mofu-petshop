@@ -30,12 +30,18 @@ export default async function StockReportPage() {
     );
     const activeBatch = p.batches[0];
     const costPerBase = activeBatch ? Number(activeBatch.costPerBase) : 0;
-    const assetValue = Math.round(totalStock * costPerBase);
+    const effectiveCost =
+      p.buyPrice && Number(p.buyPrice) > 0 ? Number(p.buyPrice) : costPerBase;
+    const minStock = Number(p.minStock);
     const margin = p.marginPercent
       ? Number(p.marginPercent)
       : Number(p.category.defaultMarginPercent);
+    const derivedSellPrice =
+      effectiveCost > 0 ? Math.round(effectiveCost * (1 + margin / 100)) : 0;
     const estimatedSellPrice =
-      costPerBase > 0 ? Math.round(costPerBase * (1 + margin / 100)) : 0;
+      p.sellPrice && Number(p.sellPrice) > 0
+        ? Math.round(Number(p.sellPrice))
+        : derivedSellPrice;
 
     return {
       id: p.id,
@@ -45,11 +51,12 @@ export default async function StockReportPage() {
       categoryName: p.category.name,
       unitCode: p.baseUnit.code,
       totalStock,
-      costPerBase,
-      assetValue,
+      costPerBase: effectiveCost,
+      assetValue: Math.round(totalStock * effectiveCost),
       margin,
+      minStock,
       estimatedSellPrice,
-      isCritical: totalStock < 5,
+      isCritical: totalStock < minStock,
     };
   });
 

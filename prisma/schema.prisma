@@ -118,6 +118,12 @@ model Product {
   baseUnitId    Int            @map("base_unit_id")
   // null = ikut default kategori
   marginPercent Decimal?       @map("margin_percent") @db.Decimal(5, 2)
+  // Harga master per satuan dasar. Batch tetap menyimpan harga snapshot-nya
+  // sendiri; nilai ini dipakai sebagai default & fallback saat batch kosong.
+  buyPrice      Decimal?       @map("buy_price") @db.Decimal(18, 4)
+  sellPrice     Decimal?       @map("sell_price") @db.Decimal(18, 4)
+  // Ambang batas stok minimum untuk peringatan restock (satuan dasar).
+  minStock      Decimal        @default(5) @map("min_stock") @db.Decimal(18, 3)
   isActive      Boolean        @default(true) @map("is_active")
   createdAt     DateTime       @default(now()) @map("created_at")
 
@@ -233,6 +239,10 @@ model Sale {
   customerId    Int?          @map("customer_id")
   salesmanId    Int?          @map("salesman_id")
   date          DateTime
+  // Snapshot nilai faktur: subtotal barang sebelum diskon/pajak.
+  subtotal      Decimal       @default(0) @db.Decimal(18, 2)
+  discountAmount Decimal      @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  taxAmount     Decimal       @default(0) @map("tax_amount") @db.Decimal(18, 2)
   total         Decimal       @default(0) @db.Decimal(18, 2)
   paymentStatus PaymentStatus @default(PAID) @map("payment_status")
   createdAt     DateTime      @default(now()) @map("created_at")

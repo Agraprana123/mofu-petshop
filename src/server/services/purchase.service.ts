@@ -202,11 +202,35 @@ async function resolveBatchPricing(
     };
   }
 
-  // 2. Margin diinput, atau 3. margin batch terakhir produk ini
+  // 2. Margin diinput, atau harga master produk, atau margin batch terakhir
   let margin: Decimal | null = null;
   if (a.marginPercent != null) {
     margin = new Decimal(a.marginPercent);
-  } else {
+  }
+
+  if (margin === null) {
+    // Harga jual master dari halaman Master Produk.
+    const product = await tx.product.findUnique({
+      where: { id: a.productId },
+      select: { sellPrice: true },
+    });
+    if (product?.sellPrice && product.sellPrice.gt(0)) {
+      const sellPerBase = product.sellPrice;
+      const sellPerUnit = sellPerBase.mul(a.conversion).toDecimalPlaces(0);
+      const marginPercent = a.costPerBase.isZero()
+        ? new Decimal(0)
+        : sellPerBase
+            .minus(a.costPerBase)
+            .div(a.costPerBase)
+            .mul(100)
+            .toDecimalPlaces(2);
+      return {
+        marginPercent,
+        sellPricePerUnit: sellPerUnit.toDecimalPlaces(2),
+        sellPricePerBase: sellPerBase,
+      };
+    }
+
     const last = await tx.stockBatch.findFirst({
       where: { productId: a.productId, sellPricePerBase: { gt: 0 } },
       orderBy: [{ receivedAt: "desc" }, { id: "desc" }],

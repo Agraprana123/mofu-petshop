@@ -10,10 +10,18 @@ export interface SaleItemInput {
   qty: number;
   /**
    * Override harga jual per unit (misal harga khusus customer).
-   * Kalau tidak diisi, dipakai harga yang TERSIMPAN di tiap batch
-   * (hasil input saat pembelian). Master produk tidak dibaca.
+   * Kalau tidak diisi, dipakai harga yang TERSIMPAN di tiap batch;
+   * jika batch belum punya harga, dipakai harga master produk.
    */
   unitPrice?: number;
+}
+
+export type SaleAdjustmentType = "NOMINAL" | "PERCENT";
+
+export interface SaleAdjustmentInput {
+  /** NOMINAL = potongan dalam rupiah, PERCENT = persen dari dasar pengenaan. */
+  type: SaleAdjustmentType;
+  value: number;
 }
 
 export interface CreateSaleInput {
@@ -21,6 +29,10 @@ export interface CreateSaleInput {
   salesmanId?: number;
   date?: Date;
   items: SaleItemInput[];
+  /** Diskon tingkat faktur (setelah subtotal). */
+  discount?: SaleAdjustmentInput;
+  /** Pajak tingkat faktur, dihitung dari subtotal setelah diskon. */
+  tax?: SaleAdjustmentInput;
 }
 
 // ────────── Service ──────────
@@ -61,6 +73,14 @@ export async function createSale(input: CreateSaleInput) {
         if (item.qty <= 0) throw new Error("Qty harus lebih dari 0");
 
         const conversion = await getConversion(tx, item.productId, item.unitId);
+        const product = await tx.product.findUniqueOrThrow({
+          where: { id: item.productId },
+          select: { sellPrice: true },
+        });
+        const masterSellPrice =
+          product.sellPrice && product.sellPrice.gt(0)
+            ? product.sellPrice
+            : null;
 
         const qty = new Decimal(item.qty);
         const qtyBase = qty.mul(conversion).toDecimalPlaces(3);
@@ -90,13 +110,17 @@ export async function createSale(input: CreateSaleInput) {
               .div(conversion)
               .toDecimalPlaces(4);
           } else {
-            // Harga yang dikunci di batch saat pembelian
+            // Harga snapshot batch; kalau kosong pakai harga master produk.
             pricePerBase = new Decimal(batch.sellPricePerBase);
             if (pricePerBase.lte(0)) {
-              throw new Error(
-                `Harga jual batch #${batch.id} (produk ${item.productId}) belum terisi. ` +
-                  `Isi harga batch tersebut sebelum menjual.`
-              );
+              if (masterSellPrice) {
+                pricePerBase = masterSellPrice;
+              } else {
+                throw new Error(
+                  `Harga jual produk (batch #${batch.id}) belum diatur. ` +
+                    `Isi harga jual di Master Produk atau Faktur Pembelian.`
+                );
+              }
             }
           }
 
@@ -137,10 +161,23 @@ export async function createSale(input: CreateSaleInput) {
         });
       }
 
-      const total = itemsData.reduce(
+      const subtotal = itemsData.reduce(
         (sum, i) => sum.plus(i.subtotal),
         new Decimal(0)
       );
+
+      // ── Diskon & pajak tingkat faktur ──
+      // Pajak dihitung dari subtotal setelah diskon.
+      let discountAmount = resolveAdjustment(
+        input.discount,
+        subtotal,
+        "Diskon"
+      );
+      if (discountAmount.gt(subtotal)) discountAmount = subtotal;
+
+      const taxableBase = subtotal.minus(discountAmount);
+      const taxAmount = resolveAdjustment(input.tax, taxableBase, "Pajak");
+      const total = taxableBase.plus(taxAmount).toDecimalPlaces(2);
 
       // ── Simpan Sale ──
       const sale = await tx.sale.create({
@@ -149,6 +186,9 @@ export async function createSale(input: CreateSaleInput) {
           customerId: input.customerId,
           salesmanId: input.salesmanId,
           date: saleDate,
+          subtotal,
+          discountAmount,
+          taxAmount,
           total,
           items: {
             create: itemsData.map((d) => ({
@@ -226,6 +266,30 @@ export async function createSale(input: CreateSaleInput) {
 // ────────── Helper ──────────
 
 type TxClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Hitung nominal diskon/pajak dari input pengguna.
+ * PERCENT dihitung terhadap `base`, NOMINAL dipakai apa adanya.
+ */
+function resolveAdjustment(
+  adjustment: SaleAdjustmentInput | undefined,
+  base: Decimal,
+  label: string
+): Decimal {
+  if (!adjustment) return new Decimal(0);
+
+  const value = Number(adjustment.value ?? 0);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} harus berupa angka 0 atau lebih`);
+  }
+
+  if (adjustment.type === "PERCENT") {
+    if (value > 100) throw new Error(`${label} tidak boleh lebih dari 100%`);
+    return base.mul(value).div(100).toDecimalPlaces(2);
+  }
+
+  return new Decimal(value).toDecimalPlaces(2);
+}
 
 async function getConversion(
   tx: TxClient,

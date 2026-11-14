@@ -51,17 +51,18 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       include: { customer: true },
     }),
-    // Produk dengan stok rendah (total qtyRemaining < 5)
-    prisma.$queryRaw<{ product_id: number; name: string; code: string; total_remaining: number; base_unit_code: string }[]>`
+    // Produk dengan stok rendah (total qtyRemaining < min_stock produk)
+    prisma.$queryRaw<{ product_id: number; name: string; code: string; total_remaining: number; base_unit_code: string; min_stock: number }[]>`
       SELECT p.id as product_id, p.name, p.code,
              COALESCE(SUM(sb.qty_remaining), 0)::float as total_remaining,
-             u.code as base_unit_code
+             u.code as base_unit_code,
+             p.min_stock::float as min_stock
       FROM products p
       LEFT JOIN stock_batches sb ON sb.product_id = p.id
       LEFT JOIN units u ON u.id = p.base_unit_id
       WHERE p.is_active = true
-      GROUP BY p.id, p.name, p.code, u.code
-      HAVING COALESCE(SUM(sb.qty_remaining), 0) < 5
+      GROUP BY p.id, p.name, p.code, u.code, p.min_stock
+      HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
       ORDER BY total_remaining ASC
       LIMIT 5
     `,
@@ -73,7 +74,7 @@ export default async function DashboardPage() {
         LEFT JOIN stock_batches sb ON sb.product_id = p.id
         WHERE p.is_active = true
         GROUP BY p.id
-        HAVING COALESCE(SUM(sb.qty_remaining), 0) < 5
+        HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
       ) sub
     `,
   ]);

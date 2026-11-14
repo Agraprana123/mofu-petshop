@@ -26,6 +26,7 @@ interface StockReportItem {
   costPerBase: number;
   assetValue: number;
   margin: number;
+  minStock: number;
   estimatedSellPrice: number;
   isCritical: boolean;
 }
@@ -197,7 +198,7 @@ export function StockReportClient({
                     <td className="px-5 py-3.5 text-center">
                       {item.isCritical ? (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-                          Kritis (&lt;5)
+                          Kritis (&lt;{item.minStock})
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">

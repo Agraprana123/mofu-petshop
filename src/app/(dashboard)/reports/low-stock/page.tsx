@@ -40,7 +40,7 @@ export default async function LowStockPage() {
       0
     );
 
-    const minStock = 5; // Batas stok minimum standar aman
+    const minStock = Number(p.minStock);
     const deficit = Math.max(0, minStock - currentStock);
 
     // Modal per base (ambil dari batch tertua yang aktif, atau dari pembelian terakhir)
@@ -62,11 +62,11 @@ export default async function LowStockPage() {
       : null;
 
     let status: "OUT_OF_STOCK" | "CRITICAL" | "LOW" | "SAFE" = "SAFE";
-    if (currentStock === 0) {
+    if (minStock > 0 && currentStock === 0) {
       status = "OUT_OF_STOCK";
-    } else if (currentStock <= 2) {
+    } else if (minStock > 0 && currentStock <= minStock * 0.5) {
       status = "CRITICAL";
-    } else if (currentStock < minStock) {
+    } else if (minStock > 0 && currentStock < minStock) {
       status = "LOW";
     }
 

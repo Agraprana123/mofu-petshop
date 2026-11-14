@@ -122,7 +122,7 @@ export function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="relative flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <nav className="relative flex-1 space-y-1 overflow-x-hidden overflow-y-auto px-3 py-4">
           <NavLink
             href="/"
             icon={<LayoutDashboard className="size-4.5" />}
@@ -136,12 +136,15 @@ export function Sidebar({
             const isOpen = collapsed || openGroups[group.label];
 
             return (
-              <div key={group.label} className="pt-2">
+              <div
+                key={group.label}
+                className={cn("pt-2", collapsed && "lg:pt-0")}
+              >
                 <button
                   onClick={() => toggleGroup(group.label)}
                   className={cn(
                     "flex w-full items-center justify-between rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 transition-colors hover:text-white/70",
-                    collapsed && "lg:pointer-events-none lg:opacity-0"
+                    collapsed && "lg:hidden"
                   )}
                   aria-expanded={isOpen}
                 >

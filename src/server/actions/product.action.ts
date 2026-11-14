@@ -49,41 +49,260 @@ export async function getProducts(search?: string) {
     const totalStock = stockMap.get(p.id) ?? new Decimal(0);
     const activeBatch = batchMap.get(p.id);
     const marginPercent = p.marginPercent ?? p.category.defaultMarginPercent;
-    const costPerBase = activeBatch?.costPerBase ?? null;
-    const sellPrice = costPerBase
-      ? costPerBase.mul(new Decimal(1).plus(marginPercent.div(100)))
+    const batchCost = activeBatch?.costPerBase ?? null;
+    const batchSellPrice =
+      activeBatch && activeBatch.sellPricePerBase.gt(0)
+        ? activeBatch.sellPricePerBase
+        : null;
+    const derivedSellPrice = batchCost
+      ? batchCost.mul(new Decimal(1).plus(marginPercent.div(100)))
       : null;
+
+    const masterBuyPrice = p.buyPrice && p.buyPrice.gt(0) ? p.buyPrice : null;
+    const masterSellPrice = p.sellPrice && p.sellPrice.gt(0) ? p.sellPrice : null;
+    const buyPrice = masterBuyPrice ?? batchCost;
+    const effectiveSellPrice =
+      masterSellPrice ?? batchSellPrice ?? derivedSellPrice;
 
     return {
       ...p,
       marginPercent,
       totalStock: totalStock.toNumber(),
-      costPerBase: costPerBase?.toNumber() ?? null,
-      sellPrice: sellPrice?.toDecimalPlaces(0).toNumber() ?? null,
+      minStock: p.minStock.toNumber(),
+      buyPrice: masterBuyPrice?.toNumber() ?? null,
+      sellPrice: masterSellPrice?.toNumber() ?? null,
+      effectiveBuyPrice: buyPrice?.toNumber() ?? null,
+      effectiveSellPrice: effectiveSellPrice?.toDecimalPlaces(0).toNumber() ?? null,
     };
   });
 }
 
+/**
+ * Buat kode produk otomatis dari nama kategori, contoh: MKN-001.
+ */
+export async function generateProductCode(categoryId?: number) {
+  let prefix = "PRD";
+
+  if (categoryId) {
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { name: true },
+    });
+    if (category) {
+      prefix =
+        category.name
+          .toUpperCase()
+          .normalize("NFD")
+          .replace(/[^A-Z0-9]/g, "")
+          .slice(0, 3) || "PRD";
+    }
+  }
+
+  const existing = await prisma.product.findMany({
+    where: { code: { startsWith: `${prefix}-` } },
+    select: { code: true },
+  });
+  const used = new Set(existing.map((item) => item.code));
+
+  let sequence = 1;
+  let code = `${prefix}-${String(sequence).padStart(3, "0")}`;
+  while (used.has(code)) {
+    sequence += 1;
+    code = `${prefix}-${String(sequence).padStart(3, "0")}`;
+  }
+
+  return { code };
+}
+
+/**
+ * Riwayat penjualan satu produk, terbaru lebih dulu.
+ * Dipakai pada dialog riwayat di halaman Master Produk.
+ */
+export async function getProductSalesHistory(productId: number) {
+  const items = await prisma.saleItem.findMany({
+    where: { productId },
+    orderBy: { sale: { date: "desc" } },
+    take: 100,
+    include: {
+      sale: {
+        select: {
+          id: true,
+          invoiceNo: true,
+          date: true,
+          customer: { select: { name: true } },
+        },
+      },
+      unit: { select: { code: true } },
+    },
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    saleId: item.sale.id,
+    invoiceNo: item.sale.invoiceNo,
+    date: item.sale.date.toISOString(),
+    customerName: item.sale.customer?.name ?? "Umum",
+    qty: item.qty.toNumber(),
+    qtyBase: item.qtyBase.toNumber(),
+    unitCode: item.unit.code,
+    subtotal: item.subtotal.toNumber(),
+  }));
+}
+
+function parseOptionalMoney(value: FormDataEntryValue | null): {
+  value: number | null;
+  error?: string;
+} {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return { value: null };
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { value: null, error: "Harga harus berupa angka 0 atau lebih" };
+  }
+  return { value: parsed };
+}
+
+function buildCodePrefix(name: string) {
+  return (
+    name
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 3) || "PRD"
+  );
+}
+
+async function nextProductCode(categoryId: number) {
+  const category = await prisma.category.findUnique({
+    where: { id: categoryId },
+    select: { name: true },
+  });
+  const prefix = buildCodePrefix(category?.name ?? "");
+  const existing = await prisma.product.findMany({
+    where: { code: { startsWith: `${prefix}-` } },
+    select: { code: true },
+  });
+  const used = new Set(existing.map((item) => item.code));
+
+  let sequence = 1;
+  let code = `${prefix}-${String(sequence).padStart(3, "0")}`;
+  while (used.has(code)) {
+    sequence += 1;
+    code = `${prefix}-${String(sequence).padStart(3, "0")}`;
+  }
+  return code;
+}
+
+/**
+ * Sinkronkan harga master ke batch stok yang tersisa.
+ * - Harga beli hanya mengisi batch saldo awal (tanpa faktur pembelian).
+ * - Harga jual mengisi batch yang belum punya harga. Jika harga master
+ *   diubah, seluruh batch aktif ikut memakai harga baru.
+ */
+async function syncPricesToBatches(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  productId: number,
+  data: {
+    buyPrice: number | null;
+    sellPrice: number | null;
+    previousBuyPrice: Decimal | null;
+    previousSellPrice: Decimal | null;
+  }
+) {
+  const { buyPrice, sellPrice, previousBuyPrice, previousSellPrice } = data;
+
+  if (buyPrice != null && buyPrice > 0) {
+    const buyChanged =
+      !previousBuyPrice || !previousBuyPrice.equals(new Decimal(buyPrice));
+
+    await tx.stockBatch.updateMany({
+      where: {
+        productId,
+        purchaseItemId: null,
+        qtyRemaining: { gt: 0 },
+        ...(buyChanged ? {} : { costPerBase: { lte: 0 } }),
+      },
+      data: { costPerBase: new Decimal(buyPrice) },
+    });
+  }
+
+  if (sellPrice != null && sellPrice > 0) {
+    const sellChanged =
+      !previousSellPrice || !previousSellPrice.equals(new Decimal(sellPrice));
+    const marginPercent =
+      buyPrice != null && buyPrice > 0
+        ? new Decimal(sellPrice)
+            .minus(buyPrice)
+            .div(buyPrice)
+            .mul(100)
+            .toDecimalPlaces(2)
+        : null;
+
+    await tx.stockBatch.updateMany({
+      where: {
+        productId,
+        qtyRemaining: { gt: 0 },
+        ...(sellChanged ? {} : { sellPricePerBase: { lte: 0 } }),
+      },
+      data: {
+        sellPricePerBase: new Decimal(sellPrice),
+        ...(marginPercent ? { marginPercent } : {}),
+      },
+    });
+  }
+}
+
 export async function createProduct(formData: FormData) {
-  const code = (formData.get("code") as string)?.trim().toUpperCase();
+  let code = (formData.get("code") as string)?.trim().toUpperCase();
   const name = (formData.get("name") as string)?.trim();
   const categoryId = parseInt(formData.get("categoryId") as string);
   const baseUnitId = parseInt(formData.get("baseUnitId") as string);
   const marginStr = formData.get("marginPercent") as string;
   const marginPercent = marginStr ? parseFloat(marginStr) : null;
+  const buy = parseOptionalMoney(formData.get("buyPrice"));
+  const sell = parseOptionalMoney(formData.get("sellPrice"));
+  const minStockRaw = (formData.get("minStock") as string)?.trim();
+  const minStock = minStockRaw ? Number(minStockRaw) : 5;
 
-  if (!code) return { error: "Kode produk harus diisi" };
   if (!name) return { error: "Nama produk harus diisi" };
   if (!categoryId) return { error: "Kategori harus dipilih" };
   if (!baseUnitId) return { error: "Satuan dasar harus dipilih" };
+  if (buy.error || sell.error) return { error: buy.error || sell.error };
+  if (!Number.isFinite(minStock) || minStock < 0) {
+    return { error: "Minimal stok harus berupa angka 0 atau lebih" };
+  }
 
   try {
-    await prisma.product.create({
-      data: { code, name, categoryId, baseUnitId, marginPercent },
+    if (!code) code = await nextProductCode(categoryId);
+
+    const created = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          code,
+          name,
+          categoryId,
+          baseUnitId,
+          marginPercent,
+          buyPrice: buy.value != null ? new Decimal(buy.value) : null,
+          sellPrice: sell.value != null ? new Decimal(sell.value) : null,
+          minStock: new Decimal(minStock),
+        },
+      });
+
+      await syncPricesToBatches(tx, product.id, {
+        buyPrice: buy.value,
+        sellPrice: sell.value,
+        previousBuyPrice: null,
+        previousSellPrice: null,
+      });
+
+      return product;
     });
+
     revalidatePath("/master/products");
-    return { success: true };
-  } catch {
+    return { success: true, code: created.code };
+  } catch (err) {
+    console.error("Create product error:", err);
     return { error: "Kode produk sudah ada atau terjadi kesalahan" };
   }
 }
@@ -96,19 +315,60 @@ export async function updateProduct(id: number, formData: FormData) {
   const marginStr = formData.get("marginPercent") as string;
   const marginPercent = marginStr ? parseFloat(marginStr) : null;
   const isActive = formData.get("isActive") === "true";
+  const buy = parseOptionalMoney(formData.get("buyPrice"));
+  const sell = parseOptionalMoney(formData.get("sellPrice"));
+  const minStockRaw = (formData.get("minStock") as string)?.trim();
+  const minStock = minStockRaw ? Number(minStockRaw) : 5;
 
   if (!code) return { error: "Kode produk harus diisi" };
   if (!name) return { error: "Nama produk harus diisi" };
+  if (!categoryId) return { error: "Kategori harus dipilih" };
+  if (!baseUnitId) return { error: "Satuan dasar harus dipilih" };
+  if (buy.error || sell.error) return { error: buy.error || sell.error };
+  if (!Number.isFinite(minStock) || minStock < 0) {
+    return { error: "Minimal stok harus berupa angka 0 atau lebih" };
+  }
 
   try {
-    await prisma.product.update({
+    const previous = await prisma.product.findUnique({
       where: { id },
-      data: { code, name, categoryId, baseUnitId, marginPercent, isActive },
+      select: { buyPrice: true, sellPrice: true },
     });
+    if (!previous) return { error: "Produk tidak ditemukan" };
+
+    await prisma.$transaction(async (tx) => {
+      await tx.product.update({
+        where: { id },
+        data: {
+          code,
+          name,
+          categoryId,
+          baseUnitId,
+          marginPercent,
+          buyPrice: buy.value != null ? new Decimal(buy.value) : null,
+          sellPrice: sell.value != null ? new Decimal(sell.value) : null,
+          minStock: new Decimal(minStock),
+          isActive,
+        },
+      });
+
+      await syncPricesToBatches(tx, id, {
+        buyPrice: buy.value,
+        sellPrice: sell.value,
+        previousBuyPrice: previous.buyPrice,
+        previousSellPrice: previous.sellPrice,
+      });
+    });
+
     revalidatePath("/master/products");
+    revalidatePath("/");
+    revalidatePath("/transactions/sales");
+    revalidatePath("/reports/stock");
+    revalidatePath("/reports/low-stock");
     return { success: true };
-  } catch {
-    return { error: "Gagal memperbarui produk" };
+  } catch (err) {
+    console.error("Update product error:", err);
+    return { error: "Gagal memperbarui produk. Pastikan kode produk unik." };
   }
 }
 
