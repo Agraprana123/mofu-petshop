@@ -4,20 +4,18 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   RotateCcw,
-  Plus,
   Search,
-  Calendar,
   AlertCircle,
-  FileText,
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
+import { ProductPicker } from "@/components/product-picker";
 import { createReturnAction } from "@/server/actions/stock.action";
+import { cn } from "@/lib/utils";
 
 interface ReturnMovement {
   id: number;
@@ -41,7 +39,12 @@ interface ProductOption {
   name: string;
   code: string;
   baseUnit: { code: string };
+  category?: { name: string } | null;
   batches: { qtyRemaining: string }[];
+}
+
+function formatQty(value: number) {
+  return value.toLocaleString("id-ID", { maximumFractionDigits: 3 });
 }
 
 export function ReturnsClient({
@@ -60,7 +63,7 @@ export function ReturnsClient({
 
   // Form State
   const [returnType, setReturnType] = useState<"RETURN_IN" | "RETURN_OUT">("RETURN_IN");
-  const [productId, setProductId] = useState<number>(products[0]?.id ?? 0);
+  const [productId, setProductId] = useState<number>(0);
   const [qty, setQty] = useState<number>(1);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [notes, setNotes] = useState("");
@@ -79,7 +82,7 @@ export function ReturnsClient({
   function openModal() {
     setError("");
     setReturnType("RETURN_IN");
-    setProductId(products[0]?.id ?? 0);
+    setProductId(0);
     setQty(1);
     setInvoiceNo("");
     setNotes("");
@@ -265,62 +268,119 @@ export function ReturnsClient({
       <Dialog
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Proses Transaksi Retur Barang"
+        title="Proses Transaksi Retur"
+        description="Pilih jenis retur, cari barang, lalu tentukan jumlahnya."
+        className="max-w-xl"
       >
-        <div className="space-y-4">
+        <div className="space-y-5">
           {error && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
+          {/* Jenis retur */}
           <div className="space-y-2">
-            <Label htmlFor="retType">Jenis Retur</Label>
-            <Select
-              id="retType"
-              value={returnType}
-              onChange={(e) => setReturnType(e.target.value as "RETURN_IN" | "RETURN_OUT")}
-            >
-              <option value="RETURN_IN">
-                Retur Penjualan (Dari Pelanggan &rarr; Menambah Stok Toko)
-              </option>
-              <option value="RETURN_OUT">
-                Retur Pembelian (Ke Supplier &rarr; Mengurangi Stok FIFO Toko)
-              </option>
-            </Select>
-          </div>
+            <Label>Jenis Retur</Label>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {[
+                {
+                  value: "RETURN_IN" as const,
+                  title: "Retur dari Pelanggan",
+                  desc: "Barang kembali ke toko — stok bertambah.",
+                  icon: ArrowDownLeft,
+                },
+                {
+                  value: "RETURN_OUT" as const,
+                  title: "Retur ke Supplier",
+                  desc: "Barang dikirim balik — stok berkurang (FIFO).",
+                  icon: ArrowUpRight,
+                },
+              ].map((option) => {
+                const active = returnType === option.value;
+                const Icon = option.icon;
 
-          <div className="space-y-2">
-            <Label htmlFor="retProduct">Pilih Produk</Label>
-            <Select
-              id="retProduct"
-              value={productId.toString()}
-              onChange={(e) => setProductId(Number(e.target.value))}
-            >
-              {products.map((p) => {
-                const stock = p.batches.reduce(
-                  (s, b) => s + Number(b.qtyRemaining),
-                  0
-                );
                 return (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.code}) — Stok: {stock} {p.baseUnit.code}
-                  </option>
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setReturnType(option.value)}
+                    aria-pressed={active}
+                    className={cn(
+                      "rounded-xl border p-3 text-left transition-all",
+                      active
+                        ? "border-[#87482D] bg-[#87482D]/5 ring-4 ring-[#87482D]/10"
+                        : "border-zinc-200 bg-white hover:border-[#87482D]/30 hover:bg-[#87482D]/[0.03]"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 text-[13px] font-semibold",
+                        active ? "text-[#87482D]" : "text-zinc-700"
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      {option.title}
+                    </span>
+                    <span className="mt-1 block text-[10px] leading-snug text-zinc-400">
+                      {option.desc}
+                    </span>
+                  </button>
                 );
               })}
-            </Select>
-            {returnType === "RETURN_OUT" && (
-              <p className="text-xs text-zinc-400">
-                Stok saat ini di gudang: <strong>{totalStock} {selectedProd?.baseUnit.code}</strong>
+            </div>
+          </div>
+
+          {/* Barang */}
+          <div className="space-y-2">
+            <Label>
+              2. Cari &amp; Pilih Barang <span className="text-red-500">*</span>
+            </Label>
+            <ProductPicker
+              products={products.map((p) => ({
+                id: p.id,
+                name: p.name,
+                code: p.code,
+                category: p.category,
+                baseUnit: p.baseUnit,
+                stock: p.batches.reduce(
+                  (sum, batch) => sum + Number(batch.qtyRemaining),
+                  0
+                ),
+              }))}
+              value={productId}
+              onChange={setProductId}
+              allowOutOfStock={returnType === "RETURN_IN"}
+            />
+            {selectedProd ? (
+              <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2 text-[11px]">
+                <span className="text-zinc-500">Stok gudang saat ini</span>
+                <span
+                  className={cn(
+                    "font-bold tabular-nums",
+                    totalStock > 0 ? "text-emerald-600" : "text-red-500"
+                  )}
+                >
+                  {formatQty(totalStock)} {selectedProd.baseUnit.code}
+                </span>
+              </div>
+            ) : (
+              <p className="text-[10px] text-zinc-400">
+                Ketik nama atau kode barang, lalu pilih dari daftar.
+              </p>
+            )}
+            {returnType === "RETURN_OUT" && selectedProd && totalStock <= 0 && (
+              <p className="text-[11px] font-medium text-red-500">
+                Stok barang ini kosong, tidak bisa diretur ke supplier.
               </p>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="retQty">
-                Jumlah Retur ({selectedProd?.baseUnit.code ?? "Unit"})
+                3. Jumlah Retur ({selectedProd?.baseUnit.code ?? "Unit"})
               </Label>
               <Input
                 id="retQty"
@@ -330,6 +390,7 @@ export function ReturnsClient({
                 step="1"
                 value={qty || ""}
                 onChange={(e) => setQty(Number(e.target.value))}
+                className="h-11"
                 required
               />
             </div>
@@ -341,6 +402,7 @@ export function ReturnsClient({
                 placeholder="Contoh: SAL-202611-0001"
                 value={invoiceNo}
                 onChange={(e) => setInvoiceNo(e.target.value)}
+                className="h-11"
               />
             </div>
           </div>
@@ -352,10 +414,11 @@ export function ReturnsClient({
               placeholder="Contoh: Barang salah varian / kemasan bocor / rusak"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              className="h-11"
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-3 border-t border-zinc-100">
+          <div className="flex flex-col-reverse gap-2.5 border-t border-zinc-100 pt-4 sm:flex-row sm:justify-end">
             <Button
               type="button"
               variant="outline"
@@ -366,8 +429,11 @@ export function ReturnsClient({
             <Button
               type="button"
               onClick={handleSubmitReturn}
-              disabled={isPending || (returnType === "RETURN_OUT" && totalStock <= 0)}
-              className="bg-[#87482D] hover:bg-[#6d3a24] text-white"
+              disabled={
+                isPending ||
+                !productId ||
+                (returnType === "RETURN_OUT" && totalStock <= 0)
+              }
             >
               {isPending ? "Memproses Retur..." : "Simpan Retur"}
             </Button>

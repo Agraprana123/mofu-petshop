@@ -21,13 +21,13 @@ export default async function StockOutPage() {
         },
         batch: true,
       },
-      take: 100,
     }),
     prisma.product.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
       include: {
         baseUnit: true,
+        category: true,
         batches: {
           where: { qtyRemaining: { gt: 0 } },
         },

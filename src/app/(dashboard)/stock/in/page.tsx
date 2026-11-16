@@ -16,13 +16,23 @@ export default async function StockInPage() {
         },
         batch: true,
       },
-      take: 100,
     }),
     prisma.product.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
       include: {
         baseUnit: true,
+        category: true,
+        units: { include: { unit: true } },
+        batches: {
+          orderBy: { receivedAt: "desc" },
+          select: {
+            qtyRemaining: true,
+            costPerBase: true,
+            sellPricePerBase: true,
+            receivedAt: true,
+          },
+        },
       },
     }),
   ]);

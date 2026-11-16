@@ -28,6 +28,7 @@ export default async function ReturnsPage() {
       orderBy: { name: "asc" },
       include: {
         baseUnit: true,
+        category: true,
         batches: {
           where: { qtyRemaining: { gt: 0 } },
         },

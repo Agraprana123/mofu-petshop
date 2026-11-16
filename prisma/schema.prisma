@@ -222,6 +222,8 @@ model StockMovement {
   qtyBase   Decimal      @map("qty_base") @db.Decimal(18, 3) // + masuk, - keluar
   refType   String?      @map("ref_type")
   refId     Int?         @map("ref_id")
+  // Catatan manual / nomor DO supplier untuk penyesuaian stok.
+  note      String?
   createdAt DateTime     @default(now()) @map("created_at")
 
   product   Product      @relation(fields: [productId], references: [id])

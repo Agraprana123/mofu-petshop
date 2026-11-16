@@ -18,7 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
+import { ProductPicker } from "@/components/product-picker";
 import { createPurchaseAction } from "@/server/actions/purchase.action";
+import { cn } from "@/lib/utils";
 
 interface SupplierOption {
   id: number;
@@ -32,6 +34,8 @@ interface ProductOption {
   code: string;
   baseUnitId: number;
   baseUnit: { id: number; code: string; name: string };
+  sellPrice: string | null;
+  category?: { id: number; name: string } | null;
   units: {
     id: number;
     unitId: number;
@@ -40,18 +44,15 @@ interface ProductOption {
   }[];
 }
 
-interface UnitOption {
-  id: number;
-  code: string;
-  name: string;
-}
-
 interface PurchaseItemDetail {
   id: number;
   qty: string;
   unitCost: string;
   qtyBase: string;
   costPerBase: string;
+  marginPercent: string;
+  sellPricePerUnit: string;
+  sellPricePerBase: string;
   subtotal: string;
   product: { name: string; code: string; baseUnit: { code: string } };
   unit: { code: string };
@@ -73,18 +74,34 @@ interface DraftItem {
   unitId: number;
   qty: number;
   unitCost: number;
+  sellPrice: number;
+}
+
+/** Baris kosong: pengguna diarahkan mencari & memilih barang dulu. */
+function emptyDraftItem(): DraftItem {
+  return { productId: 0, unitId: 0, qty: 1, unitCost: 0, sellPrice: 0 };
+}
+
+/** Konversi satuan terpilih ke satuan dasar produk. */
+function getConversion(
+  product: ProductOption | undefined,
+  unitId: number
+): number {
+  if (!product) return 1;
+  if (unitId === product.baseUnitId) return 1;
+  return Number(
+    product.units.find((unit) => unit.unitId === unitId)?.conversionToBase ?? 1
+  );
 }
 
 export function PurchasesClient({
   purchases,
   suppliers,
   products,
-  units,
 }: {
   purchases: PurchaseItem[];
   suppliers: SupplierOption[];
   products: ProductOption[];
-  units: UnitOption[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -100,14 +117,7 @@ export function PurchasesClient({
   const [purchaseDate, setPurchaseDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([
-    {
-      productId: products[0]?.id ?? 0,
-      unitId: products[0]?.baseUnitId ?? 0,
-      qty: 1,
-      unitCost: 0,
-    },
-  ]);
+  const [draftItems, setDraftItems] = useState<DraftItem[]>([emptyDraftItem()]);
 
   const filtered = purchases.filter(
     (p) =>
@@ -121,14 +131,7 @@ export function PurchasesClient({
     setSupplierId(suppliers[0]?.id ?? 0);
     setSupplierRef("");
     setPurchaseDate(new Date().toISOString().slice(0, 10));
-    setDraftItems([
-      {
-        productId: products[0]?.id ?? 0,
-        unitId: products[0]?.baseUnitId ?? 0,
-        qty: 1,
-        unitCost: 0,
-      },
-    ]);
+    setDraftItems([emptyDraftItem()]);
     setCreateModalOpen(true);
   }
 
@@ -138,14 +141,27 @@ export function PurchasesClient({
     updated[index] = {
       ...updated[index],
       productId: newProductId,
-      unitId: prod?.baseUnitId ?? updated[index].unitId,
+      unitId: prod?.baseUnitId ?? 0,
+      // Harga dari barang sebelumnya tidak boleh terbawa ke barang baru.
+      unitCost: 0,
+      // Saran awal dari harga jual master (per satuan dasar).
+      sellPrice: Number(prod?.sellPrice ?? 0),
     };
     setDraftItems(updated);
   }
 
   function handleUnitChange(index: number, newUnitId: number) {
     const updated = [...draftItems];
+    const prod = products.find((p) => p.id === Number(updated[index].productId));
+    const oldConversion = getConversion(prod, updated[index].unitId);
+    const newConversion = getConversion(prod, newUnitId);
     updated[index].unitId = newUnitId;
+    // Harga jual ikut menyesuaikan satuan yang dipilih.
+    if (updated[index].sellPrice > 0) {
+      updated[index].sellPrice = Math.round(
+        (updated[index].sellPrice / oldConversion) * newConversion
+      );
+    }
     setDraftItems(updated);
   }
 
@@ -161,16 +177,14 @@ export function PurchasesClient({
     setDraftItems(updated);
   }
 
+  function handleSellPriceChange(index: number, sellPrice: number) {
+    const updated = [...draftItems];
+    updated[index].sellPrice = sellPrice;
+    setDraftItems(updated);
+  }
+
   function addRow() {
-    setDraftItems([
-      ...draftItems,
-      {
-        productId: products[0]?.id ?? 0,
-        unitId: products[0]?.baseUnitId ?? 0,
-        qty: 1,
-        unitCost: 0,
-      },
-    ]);
+    setDraftItems([...draftItems, emptyDraftItem()]);
   }
 
   function removeRow(index: number) {
@@ -204,6 +218,9 @@ export function PurchasesClient({
           unitId: Number(item.unitId),
           qty: Number(item.qty),
           unitCost: Number(item.unitCost),
+          // Kosong = biarkan sistem menghitung dari margin/master produk.
+          sellPrice:
+            Number(item.sellPrice) > 0 ? Number(item.sellPrice) : undefined,
         })),
       });
 
@@ -427,24 +444,32 @@ export function PurchasesClient({
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         title="Buat Faktur Pembelian Baru"
+        description="Cari barang, isi harga modal dan harga jual. Sistem menghitung margin dan menyimpan harga jual per batch untuk FIFO."
+        className="max-w-5xl"
       >
         <div className="space-y-5">
           {error && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Form Header Info */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Info faktur */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="supplierId">Pemasok / Supplier</Label>
+              <Label htmlFor="supplierId">
+                Pemasok / Supplier <span className="text-red-500">*</span>
+              </Label>
               <Select
                 id="supplierId"
                 value={supplierId.toString()}
                 onChange={(e) => setSupplierId(Number(e.target.value))}
+                className="h-11"
               >
+                {suppliers.length === 0 && (
+                  <option value="0">Belum ada supplier</option>
+                )}
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -460,143 +485,228 @@ export function PurchasesClient({
                 type="date"
                 value={purchaseDate}
                 onChange={(e) => setPurchaseDate(e.target.value)}
+                className="h-11"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="supplierRef">No. Referensi Supplier (Opsional)</Label>
+              <Label htmlFor="supplierRef">No. Referensi Supplier</Label>
               <Input
                 id="supplierRef"
-                placeholder="INV-SUP-12345"
+                placeholder="INV-SUP-12345 (opsional)"
                 value={supplierRef}
                 onChange={(e) => setSupplierRef(e.target.value)}
+                className="h-11"
               />
             </div>
           </div>
 
-          {/* Items Table */}
-          <div className="border border-zinc-200 rounded-xl overflow-hidden">
-            <div className="bg-zinc-50 px-4 py-2.5 border-b border-zinc-200 text-xs font-semibold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
-              <span>Rincian Barang Masuk</span>
-              <span className="text-zinc-400 font-normal">
-                Batch stok baru akan dibuat otomatis
+          {/* Barang masuk */}
+          <div className="overflow-hidden rounded-2xl border border-zinc-200">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 bg-zinc-50/80 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500">
+                  Rincian Barang Masuk
+                </p>
+                <p className="mt-0.5 text-[10px] text-zinc-400">
+                  Harga jual kosong = otomatis dari harga master / margin produk.
+                </p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
+                {draftItems.length} barang
               </span>
             </div>
 
-            <div className="p-3 space-y-3 max-h-[340px] overflow-y-auto">
+            <div className="hidden gap-3 border-b border-zinc-100 bg-white px-4 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400 sm:grid sm:grid-cols-[minmax(0,1fr)_84px_76px_124px_124px_76px_112px_36px]">
+              <span>Barang</span>
+              <span>Satuan</span>
+              <span>Qty</span>
+              <span>Harga Beli</span>
+              <span>Harga Jual</span>
+              <span className="text-right">Margin</span>
+              <span className="text-right">Subtotal</span>
+              <span />
+            </div>
+
+            <div className="divide-y divide-zinc-100">
               {draftItems.map((item, index) => {
                 const prod = products.find((p) => p.id === Number(item.productId));
                 const availableUnits = prod
-                  ? [
-                      prod.baseUnit,
-                      ...prod.units.map((u) => u.unit),
-                    ]
-                  : units;
-
-                const subtotal = (Number(item.qty) || 0) * (Number(item.unitCost) || 0);
+                  ? [prod.baseUnit, ...prod.units.map((u) => u.unit)]
+                  : [];
+                const subtotal =
+                  (Number(item.qty) || 0) * (Number(item.unitCost) || 0);
+                const unitCost = Number(item.unitCost) || 0;
+                const sellPrice = Number(item.sellPrice) || 0;
+                const margin =
+                  unitCost > 0 && sellPrice > 0
+                    ? ((sellPrice - unitCost) / unitCost) * 100
+                    : null;
 
                 return (
                   <div
                     key={index}
-                    className="flex flex-col sm:flex-row items-center gap-3 p-3 rounded-xl bg-zinc-50/50 border border-zinc-100"
+                    className="px-4 py-3.5 transition-colors hover:bg-zinc-50/40"
                   >
-                    {/* Produk */}
-                    <div className="w-full sm:flex-1">
-                      <Label className="text-[11px] text-zinc-400 sm:hidden">Produk</Label>
-                      <Select
-                        value={item.productId.toString()}
-                        onChange={(e) => handleProductChange(index, Number(e.target.value))}
-                        className="text-xs"
-                      >
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.code})
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_84px_76px_124px_124px_76px_112px_36px] sm:items-end">
+                      <div className="min-w-0 space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Barang
+                        </Label>
+                        <ProductPicker
+                          products={products.map((p) => ({
+                            id: p.id,
+                            name: p.name,
+                            code: p.code,
+                            category: p.category,
+                            baseUnit: p.baseUnit,
+                          }))}
+                          value={item.productId}
+                          onChange={(productId) =>
+                            handleProductChange(index, productId)
+                          }
+                        />
+                      </div>
 
-                    {/* Satuan */}
-                    <div className="w-full sm:w-32">
-                      <Label className="text-[11px] text-zinc-400 sm:hidden">Satuan</Label>
-                      <Select
-                        value={item.unitId.toString()}
-                        onChange={(e) => handleUnitChange(index, Number(e.target.value))}
-                        className="text-xs"
-                      >
-                        {availableUnits.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.code}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Satuan
+                        </Label>
+                        <Select
+                          value={item.unitId ? item.unitId.toString() : ""}
+                          onChange={(e) =>
+                            handleUnitChange(index, Number(e.target.value))
+                          }
+                          disabled={!prod}
+                          className="h-11 text-xs"
+                        >
+                          {!prod && <option value="">-</option>}
+                          {availableUnits.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.code}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
 
-                    {/* Qty */}
-                    <div className="w-full sm:w-24">
-                      <Label className="text-[11px] text-zinc-400 sm:hidden">Qty</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        placeholder="Qty"
-                        value={item.qty || ""}
-                        onChange={(e) => handleQtyChange(index, Number(e.target.value))}
-                        className="text-xs"
-                      />
-                    </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Qty
+                        </Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Qty"
+                          value={item.qty || ""}
+                          onChange={(e) =>
+                            handleQtyChange(index, Number(e.target.value))
+                          }
+                          className="h-11 text-xs"
+                        />
+                      </div>
 
-                    {/* Harga Beli */}
-                    <div className="w-full sm:w-36">
-                      <Label className="text-[11px] text-zinc-400 sm:hidden">Harga Beli (@)</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="100"
-                        placeholder="Harga Beli"
-                        value={item.unitCost || ""}
-                        onChange={(e) => handleCostChange(index, Number(e.target.value))}
-                        className="text-xs"
-                      />
-                    </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Harga Beli
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="100"
+                          placeholder="Rp 0"
+                          value={item.unitCost || ""}
+                          onChange={(e) =>
+                            handleCostChange(index, Number(e.target.value))
+                          }
+                          className="h-11 text-xs"
+                        />
+                      </div>
 
-                    {/* Subtotal */}
-                    <div className="w-full sm:w-32 text-right">
-                      <p className="text-xs font-bold text-zinc-800">
-                        Rp {subtotal.toLocaleString("id-ID")}
-                      </p>
-                    </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Harga Jual
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="100"
+                          placeholder="Otomatis"
+                          value={item.sellPrice || ""}
+                          onChange={(e) =>
+                            handleSellPriceChange(index, Number(e.target.value))
+                          }
+                          className="h-11 text-xs"
+                        />
+                      </div>
 
-                    {/* Delete */}
-                    <button
-                      type="button"
-                      onClick={() => removeRow(index)}
-                      disabled={draftItems.length <= 1}
-                      className="p-1.5 text-zinc-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-zinc-400"
-                      title="Hapus baris"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Margin
+                        </Label>
+                        <div
+                          className={cn(
+                            "flex h-11 items-center justify-end rounded-xl px-2 text-xs font-bold tabular-nums sm:bg-transparent sm:px-0",
+                            margin === null
+                              ? "bg-zinc-50/80 text-zinc-400"
+                              : margin >= 0
+                                ? "bg-emerald-50/80 text-emerald-600 sm:bg-transparent"
+                                : "bg-red-50/80 text-red-600 sm:bg-transparent"
+                          )}
+                        >
+                          {margin === null
+                            ? "—"
+                            : `${margin >= 0 ? "+" : ""}${margin.toLocaleString(
+                                "id-ID",
+                                { maximumFractionDigits: 1 }
+                              )}%`}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] text-zinc-400 sm:hidden">
+                          Subtotal
+                        </Label>
+                        <div className="flex h-11 items-center justify-end rounded-xl bg-zinc-50/80 px-2 text-sm font-bold tabular-nums text-zinc-800 sm:bg-transparent sm:px-0">
+                          Rp {subtotal.toLocaleString("id-ID")}
+                        </div>
+                      </div>
+
+                      <div className="flex h-11 items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => removeRow(index)}
+                          disabled={draftItems.length <= 1}
+                          className="grid size-9 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-400"
+                          title="Hapus baris"
+                          aria-label="Hapus baris"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <div className="p-3 bg-zinc-50 border-t border-zinc-200 flex items-center justify-between">
+            <div className="flex flex-col gap-3 border-t border-zinc-200 bg-zinc-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={addRow}
-                className="text-xs"
+                className="h-10 self-start sm:self-auto"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="size-3.5" />
                 Tambah Barang Lain
               </Button>
 
-              <div className="text-right">
-                <span className="text-xs text-zinc-500 mr-2 font-medium">Total Pembelian:</span>
-                <span className="text-base font-bold text-[#87482D]">
+              <div className="flex items-baseline justify-between gap-3 sm:justify-end">
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
+                  Total Pembelian
+                </span>
+                <span className="font-display text-lg font-bold tabular-nums text-[#87482D]">
                   Rp {grandTotal.toLocaleString("id-ID")}
                 </span>
               </div>
@@ -630,6 +740,7 @@ export function PurchasesClient({
           open={detailModalOpen}
           onClose={() => setDetailModalOpen(false)}
           title={`Detail Faktur: ${selectedPurchase.invoiceNo}`}
+          className="max-w-3xl"
         >
           <div className="space-y-4">
             {/* Header info */}
@@ -655,13 +766,15 @@ export function PurchasesClient({
             </div>
 
             {/* Items Table */}
-            <div className="border border-zinc-200 rounded-xl overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto rounded-xl border border-zinc-200">
+              <table className="w-full min-w-[640px] text-xs">
                 <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
                   <tr>
                     <th className="px-3 py-2 text-left">Produk</th>
                     <th className="px-3 py-2 text-center">Qty Dibeli</th>
                     <th className="px-3 py-2 text-right">Harga Beli</th>
+                    <th className="px-3 py-2 text-right">Harga Jual</th>
+                    <th className="px-3 py-2 text-center">Margin</th>
                     <th className="px-3 py-2 text-center">Batch Terbuat</th>
                     <th className="px-3 py-2 text-right">Subtotal</th>
                   </tr>
@@ -684,6 +797,28 @@ export function PurchasesClient({
                         <div className="text-[10px] text-zinc-400">
                           (@Rp {Number(item.costPerBase).toLocaleString("id-ID")}/{item.product.baseUnit.code})
                         </div>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        Rp {Number(item.sellPricePerUnit).toLocaleString("id-ID")}
+                        <div className="text-[10px] text-zinc-400">
+                          (@Rp {Number(item.sellPricePerBase).toLocaleString("id-ID")}/{item.product.baseUnit.code})
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums",
+                            Number(item.marginPercent) >= 0
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-red-50 text-red-600"
+                          )}
+                        >
+                          {Number(item.marginPercent) >= 0 ? "+" : ""}
+                          {Number(item.marginPercent).toLocaleString("id-ID", {
+                            maximumFractionDigits: 1,
+                          })}
+                          %
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-center">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#87482D]/10 text-[#87482D] font-mono text-[11px] font-bold">

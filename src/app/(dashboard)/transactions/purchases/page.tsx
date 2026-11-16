@@ -4,7 +4,7 @@ import { PurchasesClient } from "./client";
 export const dynamic = "force-dynamic";
 
 export default async function PurchasesPage() {
-  const [purchases, suppliers, products, units] = await Promise.all([
+  const [purchases, suppliers, products] = await Promise.all([
     prisma.purchase.findMany({
       orderBy: { date: "desc" },
       include: {
@@ -27,11 +27,9 @@ export default async function PurchasesPage() {
       orderBy: { name: "asc" },
       include: {
         baseUnit: true,
+        category: true,
         units: { include: { unit: true } },
       },
-    }),
-    prisma.unit.findMany({
-      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -40,7 +38,6 @@ export default async function PurchasesPage() {
       purchases={JSON.parse(JSON.stringify(purchases))}
       suppliers={JSON.parse(JSON.stringify(suppliers))}
       products={JSON.parse(JSON.stringify(products))}
-      units={JSON.parse(JSON.stringify(units))}
     />
   );
 }

@@ -1,23 +1,12 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-import { createPortal } from "react-dom";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowUpRight,
   CalendarDays,
-  Check,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -38,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
+import { ProductPicker } from "@/components/product-picker";
 import { createSaleAction } from "@/server/actions/sales.action";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +107,11 @@ interface CartItem {
   unitPrice: number;
 }
 
+/** Baris kosong: kasir diarahkan mencari & memilih barang terlebih dahulu. */
+function emptyCartItem(): CartItem {
+  return { productId: 0, unitId: 0, qty: 1, unitPrice: 0 };
+}
+
 type RangeFilter = "ALL" | "TODAY" | "WEEK";
 
 const PAGE_SIZE = 7;
@@ -139,61 +134,38 @@ function isSameDay(date: Date, reference: Date) {
   );
 }
 
-function getProductStock(product: ProductOption) {
-  return product.batches.reduce(
-    (sum, batch) => sum + Number(batch.qtyRemaining),
-    0
-  );
-}
-
-function normalizeKeyword(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-/** Input rupiah: menampilkan pemisah ribuan saat tidak difokuskan. */
+/** Input rupiah: hanya angka, tampil dengan pemisah ribuan. */
 function MoneyInput({
   value,
   onChange,
   ariaLabel,
   placeholder = "0",
   className,
+  disabled = false,
 }: {
   value: number;
   onChange: (value: number) => void;
   ariaLabel: string;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-  const [draft, setDraft] = useState("");
-
   return (
     <input
       type="text"
       inputMode="numeric"
       autoComplete="off"
       aria-label={ariaLabel}
-      value={
-        focused ? draft : value > 0 ? Math.round(value).toLocaleString("id-ID") : ""
-      }
+      disabled={disabled}
+      value={value > 0 ? Math.round(value).toLocaleString("id-ID") : ""}
       placeholder={placeholder}
-      onFocus={() => {
-        setFocused(true);
-        setDraft(value > 0 ? String(Math.round(value)) : "");
-      }}
+      onFocus={(event) => event.currentTarget.select()}
       onChange={(event) => {
         const digits = event.target.value.replace(/\D/g, "").slice(0, 12);
-        setDraft(digits);
         onChange(digits ? Number(digits) : 0);
       }}
-      onBlur={() => setFocused(false)}
       className={cn(
-        "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold tabular-nums text-zinc-900 outline-none transition-all placeholder:text-zinc-300 focus:border-[#87482D] focus:bg-white focus:ring-4 focus:ring-[#87482D]/12",
+        "h-9 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold tabular-nums text-zinc-900 outline-none transition-all placeholder:text-zinc-300 focus:border-[#87482D] focus:bg-white focus:ring-4 focus:ring-[#87482D]/12 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400",
         className
       )}
     />
@@ -275,423 +247,6 @@ function AdjustmentTypeToggle({
           {option.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function ProductCombobox({
-  products,
-  value,
-  onChange,
-}: {
-  products: ProductOption[];
-  value: number;
-  onChange: (productId: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("ALL");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [panelStyle, setPanelStyle] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
-
-  const rootRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const shouldFocusRef = useRef(false);
-  const listboxId = useId();
-
-  const selected = products.find((product) => product.id === value);
-
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    products.forEach((product) => {
-      counts.set(
-        product.category.name,
-        (counts.get(product.category.name) ?? 0) + 1
-      );
-    });
-
-    return [
-      { name: "ALL", label: "Semua", count: products.length },
-      ...Array.from(counts.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, count]) => ({ name, label: name, count })),
-    ];
-  }, [products]);
-
-  // Pencarian otomatis: cocokkan semua kata kunci pada nama, kode, dan kategori.
-  const results = useMemo(() => {
-    const terms = normalizeKeyword(query).split(" ").filter(Boolean);
-    const fullQuery = normalizeKeyword(query);
-
-    return products
-      .filter(
-        (product) => category === "ALL" || product.category.name === category
-      )
-      .map((product) => {
-        const normalizedName = normalizeKeyword(product.name);
-        const normalizedCode = normalizeKeyword(product.code);
-        const haystack = normalizeKeyword(
-          `${product.name} ${product.code} ${product.category.name}`
-        );
-
-        if (terms.length === 0) return { product, score: 0 };
-        if (!terms.every((term) => haystack.includes(term))) return null;
-
-        let score = 1;
-        if (haystack.includes(fullQuery)) score += 5;
-        if (normalizedName.startsWith(fullQuery)) score += 4;
-        if (normalizedCode.startsWith(fullQuery)) score += 6;
-        return { product, score };
-      })
-      .filter(
-        (entry): entry is { product: ProductOption; score: number } =>
-          entry !== null
-      )
-      .sort(
-        (a, b) =>
-          b.score - a.score || a.product.name.localeCompare(b.product.name)
-      )
-      .map((entry) => entry.product);
-  }, [products, query, category]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        !rootRef.current?.contains(target) &&
-        !panelRef.current?.contains(target)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
-
-  useEffect(() => {
-    if (open && panelStyle && shouldFocusRef.current) {
-      shouldFocusRef.current = false;
-      inputRef.current?.focus();
-    }
-  }, [open, panelStyle]);
-
-  // Panel dirender lewat portal agar tidak terpotong area scroll keranjang.
-  useLayoutEffect(() => {
-    if (!open) return;
-
-    const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-
-      const rect = trigger.getBoundingClientRect();
-      const width = Math.min(420, window.innerWidth - 16);
-      const maxHeight = Math.min(380, window.innerHeight - 16);
-      const left = Math.min(
-        Math.max(8, rect.left),
-        window.innerWidth - width - 8
-      );
-      const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const spaceAbove = rect.top - 8;
-      const openAbove = spaceBelow < maxHeight && spaceAbove > spaceBelow;
-      const top = openAbove
-        ? rect.top - maxHeight - 6
-        : rect.bottom + 6;
-
-      setPanelStyle({
-        top: Math.min(
-          Math.max(8, top),
-          window.innerHeight - maxHeight - 8
-        ),
-        left,
-        width,
-        maxHeight,
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const active = listRef.current?.querySelector<HTMLElement>(
-      `[data-option-index="${activeIndex}"]`
-    );
-    active?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, open]);
-
-  function openDropdown() {
-    setQuery("");
-    setCategory("ALL");
-    setActiveIndex(0);
-    shouldFocusRef.current = true;
-    setOpen(true);
-  }
-
-  function moveActive(direction: 1 | -1) {
-    if (results.length === 0) return;
-
-    let next = activeIndex;
-    for (let step = 0; step < results.length; step += 1) {
-      next = (next + direction + results.length) % results.length;
-      if (getProductStock(results[next]) > 0) {
-        setActiveIndex(next);
-        return;
-      }
-    }
-  }
-
-  function pickProduct(product: ProductOption) {
-    if (getProductStock(product) <= 0) return;
-    onChange(product.id);
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
-
-  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      moveActive(1);
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      moveActive(-1);
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const target = results[activeIndex];
-      if (target) pickProduct(target);
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    }
-  }
-
-  return (
-    <div ref={rootRef} className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => (open ? setOpen(false) : openDropdown())}
-        className={cn(
-          "flex h-10 w-full items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-left text-xs text-zinc-900 shadow-xs transition-all hover:border-zinc-300 focus:border-[#87482D] focus:outline-none focus:ring-4 focus:ring-[#87482D]/12",
-          open && "border-[#87482D] ring-4 ring-[#87482D]/12"
-        )}
-      >
-        <Search className="size-3.5 shrink-0 text-zinc-400" />
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate font-medium",
-            !selected && "text-zinc-400"
-          )}
-        >
-          {selected?.name ?? "Cari produk..."}
-        </span>
-        {selected && (
-          <span className="hidden shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-zinc-500 sm:inline">
-            {selected.code}
-          </span>
-        )}
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-zinc-400 transition-transform",
-            open && "rotate-180"
-          )}
-        />
-      </button>
-
-      {open &&
-        panelStyle &&
-        createPortal(
-          <div
-            ref={panelRef}
-            style={panelStyle}
-            className="fixed z-[60] flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-950/25"
-          >
-            <div className="shrink-0 border-b border-zinc-100 p-2.5">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setActiveIndex(0);
-                  }}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="Cari nama, kode, atau kategori..."
-                  aria-label="Cari produk"
-                  role="combobox"
-                  aria-expanded={open}
-                  aria-controls={listboxId}
-                  aria-autocomplete="list"
-                  aria-activedescendant={
-                    results[activeIndex]
-                      ? `${listboxId}-option-${results[activeIndex].id}`
-                      : undefined
-                  }
-                  className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50/70 pl-8 pr-3 text-xs text-zinc-900 outline-none transition-all placeholder:text-zinc-400 focus:border-[#87482D] focus:bg-white focus:ring-4 focus:ring-[#87482D]/12"
-                />
-              </div>
-
-              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
-                {categories.map((item) => {
-                  const active = category === item.name;
-                  return (
-                    <button
-                      key={item.name}
-                      type="button"
-                      onClick={() => {
-                        setCategory(item.name);
-                        setActiveIndex(0);
-                      }}
-                      className={cn(
-                        "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors",
-                        active
-                          ? "border-[#87482D] bg-[#87482D] text-white"
-                          : "border-zinc-200 bg-white text-zinc-500 hover:border-[#87482D]/30 hover:bg-[#87482D]/5 hover:text-[#87482D]"
-                      )}
-                    >
-                      {item.label}
-                      <span
-                        className={cn(
-                          "ml-1 tabular-nums",
-                          active ? "text-white/70" : "text-zinc-400"
-                        )}
-                      >
-                        {item.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div
-              ref={listRef}
-              id={listboxId}
-              role="listbox"
-              aria-label="Daftar produk"
-              className="min-h-0 flex-1 overflow-y-auto p-1.5"
-            >
-              {results.length === 0 ? (
-                <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-                  <span className="grid size-11 place-items-center rounded-xl bg-zinc-100 text-zinc-400">
-                    <Search className="size-4" />
-                  </span>
-                  <p className="mt-3 text-xs font-semibold text-zinc-600">
-                    Produk tidak ditemukan
-                  </p>
-                  <p className="mt-1 text-[10px] text-zinc-400">
-                    Coba kata kunci lain atau pilih kategori berbeda.
-                  </p>
-                </div>
-              ) : (
-                results.map((product, index) => {
-                  const stock = getProductStock(product);
-                  const disabled = stock <= 0;
-                  const isActive = index === activeIndex;
-                  const isSelected = product.id === value;
-
-                  return (
-                    <button
-                      key={product.id}
-                      id={`${listboxId}-option-${product.id}`}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      aria-disabled={disabled}
-                      data-option-index={index}
-                      onMouseEnter={() => {
-                        if (!disabled) setActiveIndex(index);
-                      }}
-                      onClick={() => pickProduct(product)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-colors",
-                        !disabled && isActive && "bg-[#87482D]/8",
-                        !disabled && !isActive && "hover:bg-zinc-50",
-                        disabled && "cursor-not-allowed opacity-55"
-                      )}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
-                          <span className="truncate text-xs font-semibold text-zinc-800">
-                            {product.name}
-                          </span>
-                          {isSelected && (
-                            <Check className="size-3 shrink-0 text-[#87482D]" />
-                          )}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
-                          <span className="font-mono">{product.code}</span>
-                          <span>·</span>
-                          <span className="truncate">
-                            {product.category.name}
-                          </span>
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums",
-                          disabled
-                            ? "bg-red-50 text-red-600"
-                            : "bg-emerald-50 text-emerald-700"
-                        )}
-                      >
-                        {disabled
-                          ? "Habis"
-                          : `${stock} ${product.baseUnit.code}`}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="flex shrink-0 items-center justify-between border-t border-zinc-100 bg-zinc-50/70 px-3 py-2 text-[10px] text-zinc-400">
-              <span className="font-medium">
-                {results.length.toLocaleString("id-ID")} produk cocok
-              </span>
-              <span className="hidden items-center gap-1 sm:flex">
-                <kbd className="rounded border border-zinc-200 bg-white px-1 py-0.5 font-sans text-[9px] font-semibold">
-                  ↑↓
-                </kbd>
-                pilih
-                <kbd className="ml-1 rounded border border-zinc-200 bg-white px-1 py-0.5 font-sans text-[9px] font-semibold">
-                  Enter
-                </kbd>
-                tambah
-              </span>
-            </div>
-          </div>,
-          document.body
-        )}
     </div>
   );
 }
@@ -803,19 +358,7 @@ export function SalesClient({
     setTaxType("PERCENT");
     setTaxValue(0);
 
-    const firstProduct = products[0];
-    if (firstProduct) {
-      setCart([
-        {
-          productId: firstProduct.id,
-          unitId: firstProduct.baseUnitId,
-          qty: 1,
-          unitPrice: getUnitPrice(firstProduct, firstProduct.baseUnitId),
-        },
-      ]);
-    } else {
-      setCart([]);
-    }
+    setCart(products.length > 0 ? [emptyCartItem()] : []);
     setCreateModalOpen(true);
   }
 
@@ -869,17 +412,7 @@ export function SalesClient({
   }
 
   function addRow() {
-    const firstProduct = products[0];
-    if (!firstProduct) return;
-    setCart([
-      ...cart,
-      {
-        productId: firstProduct.id,
-        unitId: firstProduct.baseUnitId,
-        qty: 1,
-        unitPrice: getUnitPrice(firstProduct, firstProduct.baseUnitId),
-      },
-    ]);
+    setCart([...cart, emptyCartItem()]);
   }
 
   function removeRow(index: number) {
@@ -904,8 +437,10 @@ export function SalesClient({
   const grandTotal = taxableBase + taxAmount;
 
   const totalQty = cart.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-  const unpricedItems = cart.filter((item) => Number(item.unitPrice) <= 0);
-  const hasMissingPrice = unpricedItems.length > 0;
+  const hasUnselectedItems = cart.some((item) => !item.productId);
+  const hasMissingPrice = cart.some(
+    (item) => item.productId > 0 && Number(item.unitPrice) <= 0
+  );
 
   function handleSubmitSale() {
     setError("");
@@ -914,7 +449,7 @@ export function SalesClient({
       return;
     }
     if (cart.some((item) => !item.productId || item.qty <= 0)) {
-      setError("Pastikan semua barang memiliki qty lebih dari 0.");
+      setError("Pilih barang dan pastikan qty lebih dari 0 pada setiap baris.");
       return;
     }
     if (hasMissingPrice) {
@@ -1277,7 +812,7 @@ export function SalesClient({
         onClose={() => setCreateModalOpen(false)}
         title="Kasir / Faktur Penjualan Baru"
         description="Harga otomatis dari batch FIFO dan bisa diubah. Diskon serta pajak dihitung otomatis."
-        className="max-w-3xl"
+        className="max-w-4xl"
       >
         <div className="space-y-5">
           {error && (
@@ -1384,44 +919,83 @@ export function SalesClient({
                     key={index}
                     className="rounded-xl border border-zinc-200/80 bg-white p-3"
                   >
-                    <div className="flex flex-wrap items-end gap-2.5 sm:grid sm:grid-cols-[minmax(0,1fr)_84px_126px_132px_110px_36px] sm:items-end">
-                      <div className="min-w-[180px] flex-1 sm:min-w-0">
-                        <Label className="mb-1.5 block text-[10px] text-zinc-400 sm:hidden">
-                          Produk
-                        </Label>
-                        <ProductCombobox
-                          products={products}
-                          value={item.productId}
-                          onChange={(productId) =>
-                            handleProductChange(index, productId)
-                          }
-                        />
-                        <p className="mt-1 text-[10px] text-zinc-400">
-                          Stok gudang:{" "}
-                          <strong
-                            className={cn(
-                              "font-semibold",
-                              totalStock > 0
-                                ? "text-emerald-600"
-                                : "text-red-500"
-                            )}
-                          >
-                            {totalStock} {product?.baseUnit.code}
-                          </strong>
-                        </p>
-                      </div>
+                    <div className="mb-2.5 flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
+                        <span className="grid size-5 place-items-center rounded-md bg-[#87482D]/10 text-[10px] tabular-nums text-[#87482D]">
+                          {index + 1}
+                        </span>
+                        Barang
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeRow(index)}
+                        disabled={cart.length <= 1}
+                        aria-label="Hapus baris"
+                        className="grid size-8 place-items-center rounded-lg text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
 
-                      <div className="w-[84px]">
-                        <Label className="mb-1.5 block text-[10px] text-zinc-400 sm:hidden">
+                    <div className="min-w-0">
+                      <Label className="mb-1.5 block text-[10px] text-zinc-400">
+                        Produk <span className="text-red-500">*</span>
+                      </Label>
+                      <ProductPicker
+                        products={products.map((entry) => ({
+                          id: entry.id,
+                          name: entry.name,
+                          code: entry.code,
+                          category: entry.category,
+                          baseUnit: entry.baseUnit,
+                          stock: entry.batches.reduce(
+                            (sum, batch) =>
+                              sum + Number(batch.qtyRemaining),
+                            0
+                          ),
+                        }))}
+                        value={item.productId}
+                        onChange={(productId) =>
+                          handleProductChange(index, productId)
+                        }
+                        allowOutOfStock={false}
+                      />
+                      <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
+                        <Layers className="size-3" />
+                        {product ? (
+                          <>
+                            Stok gudang:
+                            <strong
+                              className={cn(
+                                "font-semibold",
+                                totalStock > 0
+                                  ? "text-emerald-600"
+                                  : "text-red-500"
+                              )}
+                            >
+                              {totalStock} {product.baseUnit.code}
+                            </strong>
+                          </>
+                        ) : (
+                          "Cari dan pilih barang untuk melihat stok."
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-[88px_132px_minmax(0,1fr)_120px] sm:items-end">
+                      <div>
+                        <Label className="mb-1.5 block text-[10px] text-zinc-400">
                           Satuan
                         </Label>
                         <Select
-                          value={item.unitId.toString()}
+                          value={item.unitId ? item.unitId.toString() : ""}
                           onChange={(event) =>
                             handleUnitChange(index, Number(event.target.value))
                           }
+                          disabled={!product}
                           className="h-10 text-xs"
                         >
+                          {!product && <option value="">Pilih barang</option>}
                           {availableUnits.map((unit) => (
                             <option key={unit.id} value={unit.id}>
                               {unit.code}
@@ -1430,8 +1004,8 @@ export function SalesClient({
                         </Select>
                       </div>
 
-                      <div className="w-[126px]">
-                        <Label className="mb-1.5 block text-[10px] text-zinc-400 sm:hidden">
+                      <div>
+                        <Label className="mb-1.5 block text-[10px] text-zinc-400">
                           Qty
                         </Label>
                         <div className="flex h-10 items-center rounded-xl border border-zinc-200 bg-white shadow-xs">
@@ -1457,7 +1031,7 @@ export function SalesClient({
                                 handleQtyChange(index, 1);
                               }
                             }}
-                            className="h-full w-10 border-0 bg-transparent text-center text-xs font-semibold text-zinc-900 outline-none"
+                            className="h-full min-w-0 flex-1 border-0 bg-transparent text-center text-xs font-semibold text-zinc-900 outline-none"
                           />
                           <button
                             type="button"
@@ -1472,17 +1046,17 @@ export function SalesClient({
                         </div>
                       </div>
 
-                      <div className="w-[132px]">
+                      <div>
                         <div className="mb-1.5 flex items-center justify-between gap-1">
-                          <p className="truncate text-[10px] text-zinc-400">
+                          <Label className="text-[10px] text-zinc-400">
                             Harga / {unitLabel}
-                          </p>
+                          </Label>
                           {isManualPrice && (
                             <button
                               type="button"
                               onClick={() => resetPrice(index)}
-                              title="Kembalikan ke harga otomatis"
-                              className="flex shrink-0 items-center gap-0.5 rounded bg-amber-50 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 transition-colors hover:bg-amber-100"
+                              title="Kembalikan ke harga otomatis FIFO"
+                              className="flex shrink-0 items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 transition-colors hover:bg-amber-100"
                             >
                               <RotateCcw className="size-2.5" />
                               Manual
@@ -1490,7 +1064,7 @@ export function SalesClient({
                           )}
                         </div>
                         <div className="relative">
-                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-zinc-400">
+                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-zinc-400">
                             Rp
                           </span>
                           <MoneyInput
@@ -1499,8 +1073,9 @@ export function SalesClient({
                             onChange={(value) =>
                               handlePriceChange(index, value)
                             }
+                            disabled={!product}
                             className={cn(
-                              "h-10 pl-7 text-left text-[11px]",
+                              "h-10 pl-8 text-left text-xs",
                               item.unitPrice <= 0 &&
                                 "border-red-200 bg-red-50/40 text-red-600"
                             )}
@@ -1508,22 +1083,14 @@ export function SalesClient({
                         </div>
                       </div>
 
-                      <div className="w-[110px] text-right">
-                        <p className="text-[10px] text-zinc-400">Subtotal</p>
-                        <p className="text-[12px] font-bold tabular-nums text-zinc-900">
+                      <div className="text-right">
+                        <p className="mb-1.5 text-[10px] text-zinc-400">
+                          Subtotal
+                        </p>
+                        <p className="flex h-10 items-center justify-end text-sm font-bold tabular-nums text-zinc-900">
                           Rp {lineTotal.toLocaleString("id-ID")}
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => removeRow(index)}
-                        disabled={cart.length <= 1}
-                        aria-label="Hapus baris"
-                        className="grid size-9 place-items-center justify-self-end rounded-lg text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
                     </div>
                   </div>
                 );
@@ -1673,11 +1240,13 @@ export function SalesClient({
             <Button
               type="button"
               onClick={handleSubmitSale}
-              disabled={isPending || hasMissingPrice}
+              disabled={isPending || hasMissingPrice || hasUnselectedItems}
               title={
-                hasMissingPrice
-                  ? "Isi harga jual barang terlebih dahulu"
-                  : undefined
+                hasUnselectedItems
+                  ? "Pilih barang pada setiap baris terlebih dahulu"
+                  : hasMissingPrice
+                    ? "Isi harga jual barang terlebih dahulu"
+                    : undefined
               }
             >
               {isPending ? "Memproses..." : "Proses & Simpan"}

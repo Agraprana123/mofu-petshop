@@ -3,6 +3,14 @@ import { ProfitReportClient } from "./client";
 
 export const dynamic = "force-dynamic";
 
+/** Kunci tanggal lokal (YYYY-MM-DD) agar konsisten dengan filter di client. */
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default async function ProfitReportPage() {
   const saleItems = await prisma.saleItem.findMany({
     orderBy: { sale: { date: "desc" } },
@@ -44,6 +52,20 @@ export default async function ProfitReportPage() {
     };
   });
 
-  return <ProfitReportClient records={JSON.parse(JSON.stringify(records))} />;
+  const now = new Date();
+  const defaultTo = dateKey(now);
+  // Default tampilkan seluruh data yang ada; kalau kosong, mulai awal bulan.
+  const defaultFrom =
+    records.length > 0
+      ? dateKey(new Date(records[records.length - 1].date))
+      : dateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+
+  return (
+    <ProfitReportClient
+      records={JSON.parse(JSON.stringify(records))}
+      defaultFrom={defaultFrom}
+      defaultTo={defaultTo}
+    />
+  );
 }
 
