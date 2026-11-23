@@ -13,6 +13,7 @@ function dateKey(date: Date) {
 
 export default async function SalesReportPage() {
   const sales = await prisma.sale.findMany({
+    where: { paymentStatus: { not: "CANCELLED" } },
     orderBy: { date: "desc" },
     include: {
       customer: true,

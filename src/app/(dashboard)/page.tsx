@@ -32,18 +32,22 @@ export default async function DashboardPage() {
     prisma.product.count({ where: { isActive: true } }),
     prisma.supplier.count(),
     prisma.customer.count(),
-    prisma.sale.count(),
+    prisma.sale.count({
+      where: { paymentStatus: { not: "CANCELLED" } },
+    }),
     prisma.purchase.count(),
     // Penjualan hari ini
     prisma.sale.aggregate({
       _sum: { total: true },
       where: {
         createdAt: { gte: todayStart, lte: todayEnd },
+        paymentStatus: { not: "CANCELLED" },
       },
     }),
     prisma.sale.count({
       where: {
         createdAt: { gte: todayStart, lte: todayEnd },
+        paymentStatus: { not: "CANCELLED" },
       },
     }),
     prisma.sale.findMany({

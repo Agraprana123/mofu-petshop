@@ -112,14 +112,14 @@ export const MENU_GROUPS: MenuGroup[] = [
         href: "/stock/in",
         icon: PackagePlus,
         description: "Penyesuaian dan riwayat stok masuk",
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "CASHIER"],
       },
       {
         label: "Stock Keluar",
         href: "/stock/out",
         icon: PackageMinus,
         description: "Penyesuaian dan riwayat stok keluar",
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "CASHIER"],
       },
       {
         label: "Retur",
@@ -216,7 +216,14 @@ export function getActiveMenuItem(pathname: string) {
   for (const group of MENU_GROUPS) {
     const item = group.items.find(
       (entry) =>
-        pathname === entry.href || pathname.startsWith(`${entry.href}/`)
+        pathname === entry.href ||
+        pathname.startsWith(`${entry.href}/`) ||
+        (entry.href === "/stock/in" &&
+          (pathname === "/transactions/stock-in" ||
+            pathname.startsWith("/transactions/stock-in/"))) ||
+        (entry.href === "/stock/out" &&
+          (pathname === "/transactions/stock-out" ||
+            pathname.startsWith("/transactions/stock-out/")))
     );
     if (item) return { group, item };
   }

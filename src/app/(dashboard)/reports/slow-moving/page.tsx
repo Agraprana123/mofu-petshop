@@ -15,6 +15,7 @@ export default async function SlowMovingPage() {
           orderBy: { receivedAt: "asc" },
         },
         saleItems: {
+          where: { sale: { paymentStatus: { not: "CANCELLED" } } },
           include: {
             sale: {
               select: { date: true, createdAt: true },

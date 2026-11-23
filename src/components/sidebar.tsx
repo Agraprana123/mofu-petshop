@@ -167,7 +167,11 @@ export function Sidebar({
                     const Icon = item.icon;
                     const isActive =
                       pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`);
+                      pathname.startsWith(`${item.href}/`) ||
+                      (item.href === "/stock/in" &&
+                        pathname.startsWith("/transactions/stock-in")) ||
+                      (item.href === "/stock/out" &&
+                        pathname.startsWith("/transactions/stock-out"));
 
                     return (
                       <NavLink

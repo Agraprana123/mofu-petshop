@@ -51,6 +51,7 @@ export function DashboardShell({
   const userRef = useRef<HTMLDivElement>(null);
 
   const active = pathname === "/" ? null : getActiveMenuItem(pathname);
+  const isAdmin = session.role === "ADMIN";
   const pageTitle =
     pathname === "/" ? DASHBOARD_ITEM.label : active?.item.label ?? "Dashboard";
   const groupTitle =
@@ -175,7 +176,7 @@ export function DashboardShell({
                   className="relative grid size-10 place-items-center rounded-xl text-zinc-500 transition-colors hover:bg-white hover:text-zinc-900"
                 >
                   <Bell className="size-5" />
-                  {lowStockCount > 0 && (
+                  {isAdmin && lowStockCount > 0 && (
                     <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-red-500 ring-2 ring-[#f5f6f8]" />
                   )}
                 </button>
@@ -187,36 +188,54 @@ export function DashboardShell({
                         Notifikasi
                       </p>
                       <p className="text-[11px] text-zinc-400">
-                        Ringkasan yang perlu perhatian
+                        {isAdmin
+                          ? "Ringkasan yang perlu perhatian"
+                          : "Pemberitahuan sistem"}
                       </p>
                     </div>
-                    {lowStockCount > 0 ? (
-                      <Link
-                        href="/reports/low-stock"
-                        onClick={() => setNotifOpen(false)}
-                        className="flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-[#87482D]/5"
-                      >
-                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600">
-                          <AlertTriangle className="size-4" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-[13px] font-semibold text-zinc-900">
-                            {lowStockCount} produk stok kritis
+                    {isAdmin ? (
+                      lowStockCount > 0 ? (
+                        <Link
+                          href="/reports/low-stock"
+                          onClick={() => setNotifOpen(false)}
+                          className="flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-[#87482D]/5"
+                        >
+                          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-red-50 text-red-600">
+                            <AlertTriangle className="size-4" />
                           </span>
-                          <span className="mt-0.5 block text-[11px] text-zinc-500">
-                            Stok di bawah batas minimum. Segera lakukan
-                            restock.
+                          <span className="min-w-0">
+                            <span className="block text-[13px] font-semibold text-zinc-900">
+                              {lowStockCount} produk stok kritis
+                            </span>
+                            <span className="mt-0.5 block text-[11px] text-zinc-500">
+                              Stok di bawah batas minimum. Segera lakukan
+                              restock.
+                            </span>
                           </span>
-                        </span>
-                      </Link>
+                        </Link>
+                      ) : (
+                        <div className="flex items-center gap-3 px-4 py-5">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
+                            <ShieldCheck className="size-4" />
+                          </span>
+                          <p className="text-[13px] text-zinc-500">
+                            Semua stok dalam kondisi aman.
+                          </p>
+                        </div>
+                      )
                     ) : (
                       <div className="flex items-center gap-3 px-4 py-5">
-                        <span className="grid size-9 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
+                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
                           <ShieldCheck className="size-4" />
                         </span>
-                        <p className="text-[13px] text-zinc-500">
-                          Semua stok dalam kondisi aman.
-                        </p>
+                        <div>
+                          <p className="text-[13px] font-medium text-zinc-700">
+                            Tidak ada notifikasi baru
+                          </p>
+                          <p className="text-[11px] text-zinc-400">
+                            Operasional kasir dan stok siap digunakan.
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>

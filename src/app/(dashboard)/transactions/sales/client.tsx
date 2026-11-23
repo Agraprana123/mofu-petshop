@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
-  ArrowUpRight,
+  Ban,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
   Clock3,
   Eye,
   Layers,
+  Loader2,
   Minus,
   Plus,
   Receipt,
@@ -28,7 +29,12 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
 import { ProductPicker } from "@/components/product-picker";
-import { createSaleAction } from "@/server/actions/sales.action";
+import {
+  cancelSaleAction,
+  completeSaleAction,
+  createSaleAction,
+} from "@/server/actions/sales.action";
+import { getSaleStatusMeta } from "@/lib/sale-status";
 import { cn } from "@/lib/utils";
 
 interface CustomerOption {
@@ -113,6 +119,8 @@ function emptyCartItem(): CartItem {
 }
 
 type RangeFilter = "ALL" | "TODAY" | "WEEK";
+
+type StatusFilter = "ALL" | "PAID" | "UNPAID" | "PARTIAL" | "CANCELLED";
 
 const PAGE_SIZE = 7;
 
@@ -266,10 +274,17 @@ export function SalesClient({
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [range, setRange] = useState<RangeFilter>("ALL");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
   const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRecord | null>(null);
+  const [detailAction, setDetailAction] = useState<"COMPLETE" | "CANCEL" | null>(
+    null
+  );
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmComplete, setConfirmComplete] = useState(false);
+  const [detailError, setDetailError] = useState("");
   const [error, setError] = useState("");
 
   const [customerId, setCustomerId] = useState<string>("");
@@ -300,23 +315,49 @@ export function SalesClient({
     [sales, now, weekStart]
   );
 
-  const filtered = useMemo(() => {
-    const query = search.toLowerCase();
+  const rangeScoped = useMemo(() => {
     return sales.filter((sale) => {
-      const matchesSearch =
-        sale.invoiceNo.toLowerCase().includes(query) ||
-        (sale.customer?.name.toLowerCase().includes(query) ?? false) ||
-        (sale.salesman?.name.toLowerCase().includes(query) ?? false);
-
       const saleDateValue = new Date(sale.date);
-      const matchesRange =
+      return (
         range === "ALL" ||
         (range === "TODAY" && isSameDay(saleDateValue, now)) ||
-        (range === "WEEK" && saleDateValue >= weekStart);
-
-      return matchesSearch && matchesRange;
+        (range === "WEEK" && saleDateValue >= weekStart)
+      );
     });
-  }, [sales, search, range, now, weekStart]);
+  }, [sales, range, now, weekStart]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      ALL: rangeScoped.length,
+      PAID: 0,
+      UNPAID: 0,
+      PARTIAL: 0,
+      CANCELLED: 0,
+    };
+
+    for (const sale of rangeScoped) {
+      if (sale.paymentStatus in counts) {
+        counts[sale.paymentStatus as StatusFilter] += 1;
+      }
+    }
+
+    return counts;
+  }, [rangeScoped]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return rangeScoped.filter((sale) => {
+      if (status !== "ALL" && sale.paymentStatus !== status) return false;
+      if (!query) return true;
+
+      return (
+        sale.invoiceNo.toLowerCase().includes(query) ||
+        (sale.customer?.name.toLowerCase().includes(query) ?? false) ||
+        (sale.salesman?.name.toLowerCase().includes(query) ?? false)
+      );
+    });
+  }, [rangeScoped, search, status]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -483,11 +524,96 @@ export function SalesClient({
     });
   }
 
+  function openDetail(sale: SaleRecord) {
+    setSelectedSale(sale);
+    setDetailError("");
+    setConfirmCancel(false);
+    setConfirmComplete(false);
+    setDetailModalOpen(true);
+  }
+
+  function closeDetail() {
+    setDetailModalOpen(false);
+    setConfirmCancel(false);
+    setConfirmComplete(false);
+    setDetailError("");
+  }
+
+  function handleCompleteSale() {
+    if (!selectedSale) return;
+    const saleId = selectedSale.id;
+
+    setDetailError("");
+    setDetailAction("COMPLETE");
+    startTransition(async () => {
+      const res = await completeSaleAction(saleId);
+      setDetailAction(null);
+
+      if (res.error) {
+        setDetailError(res.error);
+        return;
+      }
+
+      setConfirmComplete(false);
+      setDetailModalOpen(false);
+      router.refresh();
+    });
+  }
+
+  function requestCompleteSale() {
+    if (!selectedSale) return;
+
+    // Faktur batal perlu konfirmasi karena stok akan dipotong kembali.
+    if (selectedSale.paymentStatus === "CANCELLED") {
+      setDetailError("");
+      setConfirmCancel(false);
+      setConfirmComplete(true);
+      return;
+    }
+
+    handleCompleteSale();
+  }
+
+  function handleCancelSale() {
+    if (!selectedSale) return;
+    const saleId = selectedSale.id;
+
+    setDetailError("");
+    setDetailAction("CANCEL");
+    startTransition(async () => {
+      const res = await cancelSaleAction(saleId);
+      setDetailAction(null);
+
+      if (res.error) {
+        setDetailError(res.error);
+        return;
+      }
+
+      setConfirmCancel(false);
+      setDetailModalOpen(false);
+      router.refresh();
+    });
+  }
+
   const rangeTabs: { id: RangeFilter; label: string; count: number }[] = [
     { id: "ALL", label: "Semua", count: counts.ALL },
     { id: "TODAY", label: "Hari Ini", count: counts.TODAY },
     { id: "WEEK", label: "7 Hari Terakhir", count: counts.WEEK },
   ];
+
+  const statusTabs: { id: StatusFilter; label: string; count: number }[] = [
+    { id: "ALL", label: "Semua Status", count: statusCounts.ALL },
+    { id: "PAID", label: "Selesai", count: statusCounts.PAID },
+    { id: "CANCELLED", label: "Dibatalkan", count: statusCounts.CANCELLED },
+  ];
+
+  const detailStatus = selectedSale
+    ? getSaleStatusMeta(selectedSale.paymentStatus)
+    : null;
+  const detailIsCancelled = selectedSale?.paymentStatus === "CANCELLED";
+  const detailIsPaid = selectedSale?.paymentStatus === "PAID";
+  const detailQty =
+    selectedSale?.items.reduce((sum, item) => sum + Number(item.qty), 0) ?? 0;
 
   return (
     <div className="page-enter space-y-6">
@@ -536,7 +662,11 @@ export function SalesClient({
           {
             label: "Omzet Hari Ini",
             value: `Rp ${sales
-              .filter((sale) => isSameDay(new Date(sale.date), now))
+              .filter(
+                (sale) =>
+                  sale.paymentStatus !== "CANCELLED" &&
+                  isSameDay(new Date(sale.date), now)
+              )
               .reduce((sum, sale) => sum + Number(sale.total), 0)
               .toLocaleString("id-ID")}`,
             icon: Wallet,
@@ -607,6 +737,51 @@ export function SalesClient({
             ))}
           </div>
 
+          {/* Filter status faktur */}
+          <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 pt-1">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400">
+              Status
+            </span>
+            {statusTabs.map((tab) => {
+              const meta = tab.id === "ALL" ? null : getSaleStatusMeta(tab.id);
+              const isActive = status === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setStatus(tab.id);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                    isActive
+                      ? "border-[#87482D]/30 bg-[#87482D]/10 text-[#87482D]"
+                      : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50"
+                  )}
+                >
+                  {meta && (
+                    <span
+                      className={cn("size-1.5 rounded-full", meta.dotClass)}
+                    />
+                  )}
+                  {tab.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums",
+                      isActive
+                        ? "bg-[#87482D]/12 text-[#87482D]"
+                        : "bg-zinc-100 text-zinc-400"
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex flex-col gap-3 px-4 pb-4 pt-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
@@ -636,8 +811,28 @@ export function SalesClient({
               Tidak ada transaksi
             </p>
             <p className="mt-1 text-xs text-zinc-400">
-              Coba ubah filter atau buat faktur penjualan baru.
+              {status === "ALL"
+                ? "Coba ubah filter atau buat faktur penjualan baru."
+                : `Tidak ada faktur dengan status ${
+                    statusTabs.find((tab) => tab.id === status)?.label ??
+                    status
+                  } pada periode ini.`}
             </p>
+            {(status !== "ALL" || search.trim() !== "") && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => {
+                  setStatus("ALL");
+                  setSearch("");
+                  setPage(1);
+                }}
+              >
+                <RotateCcw className="size-3.5" />
+                Reset filter
+              </Button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -656,18 +851,19 @@ export function SalesClient({
               <tbody className="divide-y divide-zinc-100">
                 {paginated.map((sale) => {
                   const isSelected = selectedSale?.id === sale.id;
+                  const status = getSaleStatusMeta(sale.paymentStatus);
+                  const isCancelled = sale.paymentStatus === "CANCELLED";
+
                   return (
                     <tr
                       key={sale.id}
-                      onClick={() => {
-                        setSelectedSale(sale);
-                        setDetailModalOpen(true);
-                      }}
+                      onClick={() => openDetail(sale)}
                       className={cn(
                         "cursor-pointer transition-colors",
                         isSelected
                           ? "bg-[#87482D]/[0.045]"
-                          : "hover:bg-zinc-50/80"
+                          : "hover:bg-zinc-50/80",
+                        isCancelled && "bg-red-50/25 hover:bg-red-50/40"
                       )}
                     >
                       <td className="px-5 py-3.5">
@@ -708,20 +904,36 @@ export function SalesClient({
                         {sale.salesman?.name ?? "-"}
                       </td>
                       <td className="px-5 py-3.5 text-center">
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
-                          <span className="size-1.5 rounded-full bg-emerald-500" />
-                          Selesai
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold",
+                            status.badgeClass
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "size-1.5 rounded-full",
+                              status.dotClass
+                            )}
+                          />
+                          {status.label}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-right text-[13px] font-bold tabular-nums text-zinc-900">
+                      <td
+                        className={cn(
+                          "px-5 py-3.5 text-right text-[13px] font-bold tabular-nums",
+                          isCancelled
+                            ? "text-zinc-400 line-through decoration-zinc-300"
+                            : "text-zinc-900"
+                        )}
+                      >
                         Rp {Number(sale.total).toLocaleString("id-ID")}
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            setSelectedSale(sale);
-                            setDetailModalOpen(true);
+                            openDetail(sale);
                           }}
                           aria-label={`Lihat detail ${sale.invoiceNo}`}
                           className="grid size-9 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-[#87482D]/8 hover:text-[#87482D]"
@@ -1256,155 +1468,348 @@ export function SalesClient({
       </Dialog>
 
       {/* Detail modal */}
-      {selectedSale && (
+      {selectedSale && detailStatus && (
         <Dialog
           open={detailModalOpen}
-          onClose={() => setDetailModalOpen(false)}
-          title={`Detail Faktur ${selectedSale.invoiceNo}`}
-          description={new Date(selectedSale.date).toLocaleDateString("id-ID", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-          })}
-          className="max-w-3xl"
+          onClose={closeDetail}
+          title={`Faktur ${selectedSale.invoiceNo}`}
+          description="Detail transaksi penjualan"
+          className="max-w-4xl"
         >
-          <div className="space-y-4">
-            <div className="grid gap-3 rounded-2xl border border-zinc-200/70 bg-zinc-50/70 p-4 sm:grid-cols-3">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">
-                  Pelanggan
-                </p>
-                <p className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-800">
-                  <UserRound className="size-3.5 text-zinc-400" />
-                  {selectedSale.customer?.name ?? "Pelanggan Umum"}
-                </p>
+          <div className="space-y-5">
+            {detailIsCancelled && (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <Ban className="mt-0.5 size-4 shrink-0 text-red-600" />
+                <div>
+                  <p className="text-[13px] font-semibold text-red-700">
+                    Faktur ini telah dibatalkan
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-red-600/80">
+                    Stok barang sudah dikembalikan ke batch asal dan transaksi
+                    ini tidak dihitung pada laporan penjualan maupun profit.
+                    Tekan <strong className="font-semibold">Selesaikan</strong>{" "}
+                    untuk mengaktifkan kembali faktur ini.
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">
-                  Salesman
-                </p>
-                <p className="mt-1 text-[13px] font-semibold text-zinc-800">
-                  {selectedSale.salesman?.name ?? "-"}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">
-                  Status
-                </p>
-                <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
-                  <CheckCircle2 className="size-3" />
-                  Selesai
-                </p>
-              </div>
-            </div>
+            )}
 
-            <div className="space-y-3">
-              {selectedSale.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="overflow-hidden rounded-2xl border border-zinc-200/70"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-zinc-50/70 px-4 py-3">
-                    <div>
-                      <p className="text-[13px] font-semibold text-zinc-900">
-                        {item.product.name}
-                      </p>
-                      <p className="text-[10px] text-zinc-400">
-                        {item.product.code}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[12px] font-semibold text-zinc-700">
-                        {Number(item.qty)} {item.unit.code}
-                      </p>
-                      <p className="text-[10px] text-zinc-400">
-                        Rp {Number(item.subtotal).toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-1.5 p-3">
-                    {item.allocations.map((allocation) => (
-                      <div
-                        key={allocation.id}
-                        className="flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 px-3 py-2 text-[11px]"
-                      >
-                        <span className="font-mono font-bold text-[#87482D]">
-                          Batch #{allocation.batchId}
-                        </span>
-                        <span className="text-zinc-500">
-                          {Number(allocation.qtyBase)}{" "}
-                          {item.product.baseUnit.code}
-                        </span>
-                        <span className="text-[10px] text-zinc-400">
-                          Modal @Rp{" "}
-                          {Number(allocation.costPerBase).toLocaleString(
-                            "id-ID"
-                          )}
-                        </span>
-                        <span className="ml-auto font-semibold text-emerald-700">
-                          Jual @Rp{" "}
-                          {Number(allocation.pricePerBase).toLocaleString(
-                            "id-ID"
-                          )}
-                        </span>
-                      </div>
-                    ))}
+            {/* Header metadata */}
+            <div className="overflow-hidden rounded-2xl border border-zinc-200/70">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 place-items-center rounded-xl bg-white text-[#87482D] shadow-xs">
+                    <Receipt className="size-4" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                      Nomor Faktur
+                    </p>
+                    <p className="font-mono text-[13px] font-bold text-zinc-900">
+                      {selectedSale.invoiceNo}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="space-y-1.5 rounded-2xl border border-zinc-200/70 bg-zinc-50/60 px-4 py-3 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-500">Subtotal barang</span>
-                <span className="font-semibold tabular-nums text-zinc-800">
-                  Rp {Number(selectedSale.subtotal).toLocaleString("id-ID")}
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold",
+                    detailStatus.badgeClass
+                  )}
+                >
+                  <span
+                    className={cn("size-1.5 rounded-full", detailStatus.dotClass)}
+                  />
+                  {detailStatus.label}
                 </span>
               </div>
-              {Number(selectedSale.discountAmount) > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Diskon</span>
-                  <span className="font-semibold tabular-nums text-red-600">
-                    −Rp{" "}
-                    {Number(selectedSale.discountAmount).toLocaleString("id-ID")}
-                  </span>
+
+              <dl className="grid gap-4 px-4 py-4 sm:grid-cols-3">
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                    Pelanggan
+                  </dt>
+                  <dd className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-800">
+                    <UserRound className="size-3.5 text-zinc-400" />
+                    {selectedSale.customer?.name ?? "Pelanggan Umum"}
+                  </dd>
+                  <dd className="mt-0.5 text-[11px] text-zinc-400">
+                    {selectedSale.customer?.phone ?? "Tanpa nomor telepon"}
+                  </dd>
                 </div>
-              )}
-              {Number(selectedSale.taxAmount) > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Pajak / PPN</span>
-                  <span className="font-semibold tabular-nums text-emerald-700">
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                    Salesman
+                  </dt>
+                  <dd className="mt-1 text-[13px] font-semibold text-zinc-800">
+                    {selectedSale.salesman?.name ?? "-"}
+                  </dd>
+                  <dd className="mt-0.5 text-[11px] text-zinc-400">
+                    {selectedSale.items.length} jenis barang ·{" "}
+                    {detailQty.toLocaleString("id-ID")} unit
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400">
+                    Tanggal Transaksi
+                  </dt>
+                  <dd className="mt-1 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-800">
+                    <CalendarDays className="size-3.5 text-zinc-400" />
+                    {new Date(selectedSale.date).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {/* Rincian barang */}
+            <div className="overflow-hidden rounded-2xl border border-zinc-200/70">
+              <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3">
+                <h3 className="flex items-center gap-2 text-[13px] font-semibold text-zinc-900">
+                  <Layers className="size-3.5 text-[#87482D]" />
+                  Rincian Barang
+                </h3>
+                <span className="text-[11px] text-zinc-400">
+                  {selectedSale.items.length} baris
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-100 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-zinc-400">
+                      <th className="px-4 py-2.5">Produk</th>
+                      <th className="px-4 py-2.5 text-center">Qty</th>
+                      <th className="px-4 py-2.5 text-right">Harga</th>
+                      <th className="px-4 py-2.5 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {selectedSale.items.map((item) => {
+                      const qty = Number(item.qty);
+                      const unitPrice =
+                        qty > 0 ? Number(item.subtotal) / qty : 0;
+
+                      return (
+                        <tr key={item.id} className="align-top">
+                          <td className="px-4 py-3">
+                            <p className="text-[13px] font-semibold text-zinc-900">
+                              {item.product.name}
+                            </p>
+                            <p className="text-[10px] text-zinc-400">
+                              {item.product.code}
+                            </p>
+                            {item.allocations.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {item.allocations.map((allocation) => (
+                                  <span
+                                    key={allocation.id}
+                                    className="inline-flex items-center gap-1 rounded-md bg-zinc-50 px-1.5 py-0.5 text-[9px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200/70"
+                                  >
+                                    Batch #{allocation.batchId} ·{" "}
+                                    {Number(allocation.qtyBase)}{" "}
+                                    {item.product.baseUnit.code}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-center text-[12px] font-semibold tabular-nums text-zinc-700">
+                            {qty.toLocaleString("id-ID")} {item.unit.code}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-[12px] tabular-nums text-zinc-500">
+                            Rp {unitPrice.toLocaleString("id-ID")}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 text-right text-[13px] font-bold tabular-nums text-zinc-900">
+                            Rp{" "}
+                            {Number(item.subtotal).toLocaleString("id-ID")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Ringkasan pembayaran */}
+            <div className="overflow-hidden rounded-2xl border border-zinc-200/70">
+              <div className="flex items-center gap-2 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3">
+                <Wallet className="size-3.5 text-[#87482D]" />
+                <h3 className="text-[13px] font-semibold text-zinc-900">
+                  Ringkasan Pembayaran
+                </h3>
+              </div>
+              <div className="grid gap-3 px-4 py-4 sm:grid-cols-3">
+                <div className="rounded-xl border border-zinc-200/70 bg-white px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">
+                    Subtotal
+                  </p>
+                  <p className="mt-1 text-[14px] font-bold tabular-nums text-zinc-900">
+                    Rp {Number(selectedSale.subtotal).toLocaleString("id-ID")}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-red-200/70 bg-red-50/50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-red-400">
+                    Diskon
+                  </p>
+                  <p className="mt-1 text-[14px] font-bold tabular-nums text-red-600">
+                    −Rp{" "}
+                    {Number(selectedSale.discountAmount).toLocaleString(
+                      "id-ID"
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/50 px-3 py-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-500">
+                    Pajak / PPN
+                  </p>
+                  <p className="mt-1 text-[14px] font-bold tabular-nums text-emerald-700">
                     +Rp{" "}
                     {Number(selectedSale.taxAmount).toLocaleString("id-ID")}
-                  </span>
+                  </p>
                 </div>
-              )}
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-[#6D3A24]/20 bg-[#87482D] px-4 py-3.5 text-white">
+                <span className="text-[13px] font-medium text-white/75">
+                  Total Pembayaran
+                </span>
+                <span className="font-display text-xl font-bold">
+                  Rp {Number(selectedSale.total).toLocaleString("id-ID")}
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-2xl bg-[#87482D] px-4 py-3.5 text-white">
-              <span className="text-[13px] font-medium text-white/70">
-                Total Pembayaran
-              </span>
-              <span className="font-display text-lg font-bold">
-                Rp {Number(selectedSale.total).toLocaleString("id-ID")}
-              </span>
-            </div>
+            {detailError && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-[12px] font-medium text-red-700">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                {detailError}
+              </div>
+            )}
 
-            <div className="flex justify-between">
-              <Button
-                variant="ghost"
-                onClick={() => setDetailModalOpen(false)}
-              >
+            {confirmCancel && !detailIsCancelled && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                <p className="flex items-center gap-2 text-[13px] font-semibold text-red-700">
+                  <AlertCircle className="size-4" />
+                  Batalkan faktur {selectedSale.invoiceNo}?
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-red-600/80">
+                  Stok dikembalikan ke batch asal, lalu faktur tidak lagi
+                  dihitung pada laporan penjualan dan profit. Tindakan ini
+                  tidak bisa dibatalkan.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleCancelSale}
+                    disabled={detailAction !== null}
+                  >
+                    {detailAction === "CANCEL" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Ban className="size-3.5" />
+                    )}
+                    {detailAction === "CANCEL"
+                      ? "Membatalkan..."
+                      : "Ya, batalkan faktur"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmCancel(false)}
+                    disabled={detailAction !== null}
+                  >
+                    Kembali
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {confirmComplete && detailIsCancelled && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="flex items-center gap-2 text-[13px] font-semibold text-amber-800">
+                  <AlertCircle className="size-4" />
+                  Aktifkan kembali faktur {selectedSale.invoiceNo}?
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-700/80">
+                  Stok akan dipotong kembali mengikuti alokasi batch FIFO
+                  semula, lalu faktur ditandai selesai dan kembali masuk ke
+                  laporan penjualan.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleCompleteSale}
+                    disabled={detailAction !== null}
+                  >
+                    {detailAction === "COMPLETE" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="size-3.5" />
+                    )}
+                    {detailAction === "COMPLETE"
+                      ? "Menyelesaikan..."
+                      : "Ya, selesaikan faktur"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmComplete(false)}
+                    disabled={detailAction !== null}
+                  >
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Aksi */}
+            <div className="flex flex-col-reverse gap-2 border-t border-zinc-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="ghost" onClick={closeDetail}>
                 Tutup
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => router.push("/transactions/sales")}
-              >
-                Buka Halaman Kasir
-                <ArrowUpRight className="size-4" />
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDetailError("");
+                    setConfirmComplete(false);
+                    setConfirmCancel(true);
+                  }}
+                  disabled={detailIsCancelled || detailAction !== null}
+                  title={
+                    detailIsCancelled ? "Faktur sudah dibatalkan" : undefined
+                  }
+                  className="border-red-200 text-red-600 hover:border-red-300 hover:bg-red-50"
+                >
+                  <Ban className="size-4" />
+                  Batalkan
+                </Button>
+                <Button
+                  onClick={requestCompleteSale}
+                  disabled={detailIsPaid || detailAction !== null}
+                  title={
+                    detailIsPaid
+                      ? "Faktur sudah selesai"
+                      : detailIsCancelled
+                        ? "Aktifkan kembali faktur dan potong stok sesuai batch FIFO"
+                        : undefined
+                  }
+                >
+                  {detailAction === "COMPLETE" ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-4" />
+                  )}
+                  {detailIsPaid
+                    ? "Sudah Selesai"
+                    : detailAction === "COMPLETE"
+                      ? "Menyelesaikan..."
+                      : "Selesaikan"}
+                </Button>
+              </div>
             </div>
           </div>
         </Dialog>

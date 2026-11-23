@@ -17,17 +17,21 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const isAdmin = session.role === "ADMIN";
+
   const [lowStock, cookieStore] = await Promise.all([
-    prisma.$queryRaw<{ count: number }[]>`
-      SELECT COUNT(*)::int AS count FROM (
-        SELECT p.id
-        FROM products p
-        LEFT JOIN stock_batches sb ON sb.product_id = p.id
-        WHERE p.is_active = true
-        GROUP BY p.id
-        HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
-      ) sub
-    `,
+    isAdmin
+      ? prisma.$queryRaw<{ count: number }[]>`
+          SELECT COUNT(*)::int AS count FROM (
+            SELECT p.id
+            FROM products p
+            LEFT JOIN stock_batches sb ON sb.product_id = p.id
+            WHERE p.is_active = true
+            GROUP BY p.id
+            HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
+          ) sub
+        `
+      : Promise.resolve([{ count: 0 }]),
     cookies(),
   ]);
 

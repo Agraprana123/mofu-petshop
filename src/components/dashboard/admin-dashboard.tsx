@@ -17,6 +17,7 @@ import {
   Wallet,
 } from "lucide-react";
 import type { SessionPayload } from "@/lib/auth";
+import { getSaleStatusMeta } from "@/lib/sale-status";
 
 interface AdminDashboardProps {
   session: SessionPayload;
@@ -303,7 +304,9 @@ export function AdminDashboard({
             </div>
           ) : (
             <div className="divide-y divide-zinc-100">
-              {recentSales.map((sale) => (
+              {recentSales.map((sale) => {
+                const status = getSaleStatusMeta(sale.paymentStatus);
+                return (
                 <Link
                   key={sale.id}
                   href="/transactions/sales"
@@ -337,13 +340,16 @@ export function AdminDashboard({
                     <p className="text-[13px] font-bold tabular-nums text-zinc-900">
                       Rp {Number(sale.total).toLocaleString("id-ID")}
                     </p>
-                    <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
-                      Selesai
+                    <span
+                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-semibold ${status.textClass}`}
+                    >
+                      <span className={`size-1.5 rounded-full ${status.dotClass}`} />
+                      {status.label}
                     </span>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

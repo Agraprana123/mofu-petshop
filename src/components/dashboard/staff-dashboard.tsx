@@ -6,12 +6,15 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Package,
+  PackageMinus,
+  PackagePlus,
   RotateCcw,
   ShoppingCart,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import type { SessionPayload } from "@/lib/auth";
+import { getSaleStatusMeta } from "@/lib/sale-status";
 
 interface StaffDashboardProps {
   session: SessionPayload;
@@ -100,6 +103,20 @@ export function StaffDashboard({
                 Mulai Transaksi
               </Link>
               <Link
+                href="/stock/in"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/20 transition-all hover:bg-white/15 active:scale-[0.98]"
+              >
+                <PackagePlus className="size-4" />
+                Stock Masuk
+              </Link>
+              <Link
+                href="/stock/out"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/20 transition-all hover:bg-white/15 active:scale-[0.98]"
+              >
+                <PackageMinus className="size-4" />
+                Stock Keluar
+              </Link>
+              <Link
                 href="/returns"
                 className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-white/20 transition-all hover:bg-white/15 active:scale-[0.98]"
               >
@@ -157,7 +174,7 @@ export function StaffDashboard({
       </section>
 
       {/* Quick actions */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: "Transaksi Penjualan",
@@ -165,6 +182,20 @@ export function StaffDashboard({
             href: "/transactions/sales",
             icon: ShoppingCart,
             tone: "bg-[#87482D] text-white",
+          },
+          {
+            label: "Stock Masuk",
+            description: "Catat penyesuaian stok masuk barang",
+            href: "/stock/in",
+            icon: PackagePlus,
+            tone: "bg-emerald-500/10 text-emerald-700",
+          },
+          {
+            label: "Stock Keluar",
+            description: "Catat penyesuaian stok keluar barang",
+            href: "/stock/out",
+            icon: PackageMinus,
+            tone: "bg-rose-500/10 text-rose-700",
           },
           {
             label: "Retur Barang",
@@ -241,7 +272,9 @@ export function StaffDashboard({
           </div>
         ) : (
           <div className="divide-y divide-zinc-100">
-            {recentSales.map((sale) => (
+            {recentSales.map((sale) => {
+              const status = getSaleStatusMeta(sale.paymentStatus);
+              return (
               <Link
                 key={sale.id}
                 href="/transactions/sales"
@@ -275,13 +308,16 @@ export function StaffDashboard({
                   <p className="text-[13px] font-bold tabular-nums text-zinc-900">
                     Rp {Number(sale.total).toLocaleString("id-ID")}
                   </p>
-                  <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
-                    Selesai
+                  <span
+                    className={`mt-1 inline-flex items-center gap-1 text-[10px] font-semibold ${status.textClass}`}
+                  >
+                    <span className={`size-1.5 rounded-full ${status.dotClass}`} />
+                    {status.label}
                   </span>
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

@@ -9,7 +9,9 @@ export default async function FastMovingPage() {
     include: {
       category: true,
       baseUnit: true,
-      saleItems: true,
+      saleItems: {
+        where: { sale: { paymentStatus: { not: "CANCELLED" } } },
+      },
       batches: {
         where: { qtyRemaining: { gt: 0 } },
       },

@@ -1,9 +1,16 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { PurchasesClient } from "./client";
 
 export const dynamic = "force-dynamic";
 
 export default async function PurchasesPage() {
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") {
+    redirect("/");
+  }
+
   const [purchases, suppliers, products] = await Promise.all([
     prisma.purchase.findMany({
       orderBy: { date: "desc" },
