@@ -123,6 +123,58 @@ function moveActiveIndex(
   return currentIndex;
 }
 
+interface DropdownPanelStyle {
+  top?: number;
+  bottom?: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+}
+
+function computeDropdownStyle(
+  rect: DOMRect,
+  {
+    preferredWidth,
+    preferredMaxHeight,
+    minBelowToStayDown = 180,
+  }: {
+    preferredWidth: number;
+    preferredMaxHeight: number;
+    minBelowToStayDown?: number;
+  }
+): DropdownPanelStyle {
+  const width = Math.min(preferredWidth, window.innerWidth - 16);
+  const left = Math.min(
+    Math.max(8, rect.left),
+    window.innerWidth - width - 8
+  );
+  const gap = 6;
+  const edgePadding = 8;
+  const spaceBelow = Math.max(
+    0,
+    window.innerHeight - rect.bottom - gap - edgePadding
+  );
+  const spaceAbove = Math.max(0, rect.top - gap - edgePadding);
+
+  const openAbove = spaceBelow < minBelowToStayDown && spaceAbove > spaceBelow;
+
+  if (openAbove) {
+    return {
+      bottom: Math.max(edgePadding, window.innerHeight - rect.top + gap),
+      left,
+      width,
+      maxHeight: Math.min(preferredMaxHeight, Math.max(120, spaceAbove)),
+    };
+  }
+
+  return {
+    top: Math.max(edgePadding, rect.bottom + gap),
+    left,
+    width,
+    maxHeight: Math.min(preferredMaxHeight, Math.max(140, spaceBelow)),
+  };
+}
+
 function ProductDropdownPanel({
   panelRef,
   listRef,
@@ -143,7 +195,7 @@ function ProductDropdownPanel({
   panelRef: React.RefObject<HTMLDivElement | null>;
   listRef: React.RefObject<HTMLDivElement | null>;
   listboxId: string;
-  panelStyle: { top: number; left: number; width: number; maxHeight: number };
+  panelStyle: DropdownPanelStyle;
   results: ProductPickerOption[];
   categories: { name: string; label: string; count: number }[];
   category: string;
@@ -338,12 +390,7 @@ export function ProductQuickSearch({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [panelStyle, setPanelStyle] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
+  const [panelStyle, setPanelStyle] = useState<DropdownPanelStyle | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -383,23 +430,13 @@ export function ProductQuickSearch({
       if (!root) return;
 
       const rect = root.getBoundingClientRect();
-      const width = Math.min(Math.max(rect.width, 320), window.innerWidth - 16);
-      const maxHeight = Math.min(340, window.innerHeight - 16);
-      const left = Math.min(
-        Math.max(8, rect.left),
-        window.innerWidth - width - 8
+      setPanelStyle(
+        computeDropdownStyle(rect, {
+          preferredWidth: Math.max(rect.width, 320),
+          preferredMaxHeight: 340,
+          minBelowToStayDown: 180,
+        })
       );
-      const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const spaceAbove = rect.top - 8;
-      const openAbove = spaceBelow < maxHeight && spaceAbove > spaceBelow;
-      const top = openAbove ? rect.top - maxHeight - 6 : rect.bottom + 6;
-
-      setPanelStyle({
-        top: Math.min(Math.max(8, top), window.innerHeight - maxHeight - 8),
-        left,
-        width,
-        maxHeight,
-      });
     };
 
     updatePosition();
@@ -589,12 +626,7 @@ export function ProductPicker({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [panelStyle, setPanelStyle] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
+  const [panelStyle, setPanelStyle] = useState<DropdownPanelStyle | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -645,23 +677,13 @@ export function ProductPicker({
       if (!trigger) return;
 
       const rect = trigger.getBoundingClientRect();
-      const width = Math.min(420, window.innerWidth - 16);
-      const maxHeight = Math.min(360, window.innerHeight - 16);
-      const left = Math.min(
-        Math.max(8, rect.left),
-        window.innerWidth - width - 8
+      setPanelStyle(
+        computeDropdownStyle(rect, {
+          preferredWidth: 420,
+          preferredMaxHeight: 360,
+          minBelowToStayDown: 220,
+        })
       );
-      const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const spaceAbove = rect.top - 8;
-      const openAbove = spaceBelow < maxHeight && spaceAbove > spaceBelow;
-      const top = openAbove ? rect.top - maxHeight - 6 : rect.bottom + 6;
-
-      setPanelStyle({
-        top: Math.min(Math.max(8, top), window.innerHeight - maxHeight - 8),
-        left,
-        width,
-        maxHeight,
-      });
     };
 
     updatePosition();
