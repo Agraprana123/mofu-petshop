@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
-import { ProductPicker } from "@/components/product-picker";
+import { ProductQuickSearch } from "@/components/product-picker";
 import {
   cancelSaleAction,
   completeSaleAction,
@@ -111,11 +111,6 @@ interface CartItem {
   unitId: number;
   qty: number;
   unitPrice: number;
-}
-
-/** Baris kosong: kasir diarahkan mencari & memilih barang terlebih dahulu. */
-function emptyCartItem(): CartItem {
-  return { productId: 0, unitId: 0, qty: 1, unitPrice: 0 };
 }
 
 type RangeFilter = "ALL" | "TODAY" | "WEEK";
@@ -293,6 +288,7 @@ export function SalesClient({
     new Date().toISOString().slice(0, 10)
   );
   const [cart, setCart] = useState<CartItem[]>([]);
+  const cartListRef = useRef<HTMLDivElement>(null);
   const [discountType, setDiscountType] = useState<AdjustmentType>("NOMINAL");
   const [discountValue, setDiscountValue] = useState(0);
   const [taxType, setTaxType] = useState<AdjustmentType>("PERCENT");
@@ -389,6 +385,23 @@ export function SalesClient({
     return Math.round(pricePerBase * conversion);
   }
 
+  const quickSearchProducts = useMemo(
+    () =>
+      products.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        code: entry.code,
+        category: entry.category,
+        baseUnit: entry.baseUnit,
+        stock: entry.batches.reduce(
+          (sum, batch) => sum + Number(batch.qtyRemaining),
+          0
+        ),
+        price: getUnitPrice(entry, entry.baseUnitId),
+      })),
+    [products]
+  );
+
   function openCreateModal() {
     setError("");
     setCustomerId("");
@@ -399,22 +412,49 @@ export function SalesClient({
     setTaxType("PERCENT");
     setTaxValue(0);
 
-    setCart(products.length > 0 ? [emptyCartItem()] : []);
+    setCart([]);
     setCreateModalOpen(true);
   }
 
-  function handleProductChange(index: number, newProductId: number) {
+  function handleAddProductFromSearch(newProductId: number) {
     const prod = products.find((p) => p.id === newProductId);
     if (!prod) return;
 
-    const updated = [...cart];
-    updated[index] = {
-      ...updated[index],
-      productId: newProductId,
-      unitId: prod.baseUnitId,
-      unitPrice: getUnitPrice(prod, prod.baseUnitId),
-    };
-    setCart(updated);
+    const unitPrice = getUnitPrice(prod, prod.baseUnitId);
+    let appendedNew = false;
+
+    setCart((prev) => {
+      const existingIndex = prev.findIndex(
+        (item) =>
+          item.productId === newProductId && item.unitId === prod.baseUnitId
+      );
+      if (existingIndex !== -1) {
+        return prev.map((item, idx) =>
+          idx === existingIndex ? { ...item, qty: (item.qty || 0) + 1 } : item
+        );
+      }
+      appendedNew = true;
+      return [
+        ...prev,
+        {
+          productId: newProductId,
+          unitId: prod.baseUnitId,
+          qty: 1,
+          unitPrice,
+        },
+      ];
+    });
+
+    if (appendedNew) {
+      requestAnimationFrame(() => {
+        if (cartListRef.current) {
+          cartListRef.current.scrollTo({
+            top: cartListRef.current.scrollHeight,
+            behavior: "smooth",
+          });
+        }
+      });
+    }
   }
 
   function handleUnitChange(index: number, newUnitId: number) {
@@ -452,13 +492,8 @@ export function SalesClient({
     setCart(updated);
   }
 
-  function addRow() {
-    setCart([...cart, emptyCartItem()]);
-  }
-
   function removeRow(index: number) {
-    if (cart.length <= 1) return;
-    setCart(cart.filter((_, i) => i !== index));
+    setCart((prev) => prev.filter((_, i) => i !== index));
   }
 
   const subtotal = cart.reduce(
@@ -478,7 +513,7 @@ export function SalesClient({
   const grandTotal = taxableBase + taxAmount;
 
   const totalQty = cart.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
-  const hasUnselectedItems = cart.some((item) => !item.productId);
+  const isCartEmpty = cart.length === 0;
   const hasMissingPrice = cart.some(
     (item) => item.productId > 0 && Number(item.unitPrice) <= 0
   );
@@ -1101,230 +1136,253 @@ export function SalesClient({
               </span>
             </div>
 
-            <div className="max-h-[360px] space-y-2.5 overflow-y-auto p-3">
-              {cart.map((item, index) => {
-                const product = products.find(
-                  (entry) => entry.id === Number(item.productId)
-                );
-                const availableUnits = product
-                  ? [
-                      product.baseUnit,
-                      ...product.units
-                        .filter((unit) => unit.unitId !== product.baseUnitId)
-                        .map((unit) => unit.unit),
-                    ]
-                  : [];
-                const totalStock = product
-                  ? product.batches.reduce(
-                      (sum, batch) => sum + Number(batch.qtyRemaining),
-                      0
-                    )
-                  : 0;
-                const lineTotal =
-                  (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
-                const unitLabel =
-                  availableUnits.find((unit) => unit.id === item.unitId)?.code ??
-                  product?.baseUnit.code ??
-                  "";
-                const autoPrice = product
-                  ? getUnitPrice(product, item.unitId)
-                  : 0;
-                const isManualPrice = item.unitPrice !== autoPrice;
-
-                return (
-                  <div
-                    key={index}
-                    className="rounded-xl border border-zinc-200/80 bg-white p-3"
-                  >
-                    <div className="mb-2.5 flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
-                        <span className="grid size-5 place-items-center rounded-md bg-[#87482D]/10 text-[10px] tabular-nums text-[#87482D]">
-                          {index + 1}
-                        </span>
-                        Barang
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeRow(index)}
-                        disabled={cart.length <= 1}
-                        aria-label="Hapus baris"
-                        className="grid size-8 place-items-center rounded-lg text-zinc-300 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-
-                    <div className="min-w-0">
-                      <Label className="mb-1.5 block text-[10px] text-zinc-400">
-                        Produk <span className="text-red-500">*</span>
-                      </Label>
-                      <ProductPicker
-                        products={products.map((entry) => ({
-                          id: entry.id,
-                          name: entry.name,
-                          code: entry.code,
-                          category: entry.category,
-                          baseUnit: entry.baseUnit,
-                          stock: entry.batches.reduce(
-                            (sum, batch) =>
-                              sum + Number(batch.qtyRemaining),
-                            0
-                          ),
-                        }))}
-                        value={item.productId}
-                        onChange={(productId) =>
-                          handleProductChange(index, productId)
-                        }
-                        allowOutOfStock={false}
-                      />
-                      <p className="mt-1.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
-                        <Layers className="size-3" />
-                        {product ? (
-                          <>
-                            Stok gudang:
-                            <strong
-                              className={cn(
-                                "font-semibold",
-                                totalStock > 0
-                                  ? "text-emerald-600"
-                                  : "text-red-500"
-                              )}
-                            >
-                              {totalStock} {product.baseUnit.code}
-                            </strong>
-                          </>
-                        ) : (
-                          "Cari dan pilih barang untuk melihat stok."
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-[88px_132px_minmax(0,1fr)_120px] sm:items-end">
-                      <div>
-                        <Label className="mb-1.5 block text-[10px] text-zinc-400">
-                          Satuan
-                        </Label>
-                        <Select
-                          value={item.unitId ? item.unitId.toString() : ""}
-                          onChange={(event) =>
-                            handleUnitChange(index, Number(event.target.value))
-                          }
-                          disabled={!product}
-                          className="h-10 text-xs"
-                        >
-                          {!product && <option value="">Pilih barang</option>}
-                          {availableUnits.map((unit) => (
-                            <option key={unit.id} value={unit.id}>
-                              {unit.code}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label className="mb-1.5 block text-[10px] text-zinc-400">
-                          Qty
-                        </Label>
-                        <div className="flex h-10 items-center rounded-xl border border-zinc-200 bg-white shadow-xs">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleQtyChange(index, Math.max(1, (item.qty || 1) - 1))
-                            }
-                            aria-label="Kurangi qty"
-                            className="grid h-9 w-9 place-items-center rounded-l-xl text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-700"
-                          >
-                            <Minus className="size-3.5" />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            value={item.qty === 0 ? "" : item.qty}
-                            onChange={(event) =>
-                              handleQtyChange(index, Number(event.target.value))
-                            }
-                            onBlur={() => {
-                              if (!item.qty || item.qty < 1) {
-                                handleQtyChange(index, 1);
-                              }
-                            }}
-                            className="h-full min-w-0 flex-1 border-0 bg-transparent text-center text-xs font-semibold text-zinc-900 outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleQtyChange(index, (item.qty || 0) + 1)
-                            }
-                            aria-label="Tambah qty"
-                            className="grid h-9 w-9 place-items-center rounded-r-xl text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-700"
-                          >
-                            <Plus className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mb-1.5 flex items-center justify-between gap-1">
-                          <Label className="text-[10px] text-zinc-400">
-                            Harga / {unitLabel}
-                          </Label>
-                          {isManualPrice && (
-                            <button
-                              type="button"
-                              onClick={() => resetPrice(index)}
-                              title="Kembalikan ke harga otomatis FIFO"
-                              className="flex shrink-0 items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 transition-colors hover:bg-amber-100"
-                            >
-                              <RotateCcw className="size-2.5" />
-                              Manual
-                            </button>
-                          )}
-                        </div>
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-zinc-400">
-                            Rp
-                          </span>
-                          <MoneyInput
-                            ariaLabel={`Harga satuan ${product?.name ?? ""}`}
-                            value={item.unitPrice}
-                            onChange={(value) =>
-                              handlePriceChange(index, value)
-                            }
-                            disabled={!product}
-                            className={cn(
-                              "h-10 pl-8 text-left text-xs",
-                              item.unitPrice <= 0 &&
-                                "border-red-200 bg-red-50/40 text-red-600"
-                            )}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="mb-1.5 text-[10px] text-zinc-400">
-                          Subtotal
-                        </p>
-                        <p className="flex h-10 items-center justify-end text-sm font-bold tabular-nums text-zinc-900">
-                          Rp {lineTotal.toLocaleString("id-ID")}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+            {/* Search bar utama untuk langsung menambah barang ke keranjang */}
+            <div className="border-b border-zinc-100 bg-zinc-50/40 p-3">
+              <ProductQuickSearch
+                products={quickSearchProducts}
+                onSelect={handleAddProductFromSearch}
+                allowOutOfStock={false}
+                placeholder="Cari nama produk, kode, atau kategori untuk menambah..."
+              />
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-zinc-200 bg-zinc-50/80 p-3 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addRow}
-              >
-                <Plus className="size-3.5" />
-                Tambah Barang
-              </Button>
+            <div
+              ref={cartListRef}
+              className="max-h-[340px] space-y-2.5 overflow-y-auto p-3"
+            >
+              {cart.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-zinc-50/40 px-4 py-8 text-center">
+                  <span className="grid size-10 place-items-center rounded-xl bg-white text-zinc-400 shadow-xs">
+                    <ShoppingCart className="size-4" />
+                  </span>
+                  <p className="mt-2.5 text-xs font-semibold text-zinc-700">
+                    Keranjang masih kosong
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-zinc-400">
+                    Cari dan pilih barang di kotak pencarian di atas. Item berikutnya otomatis masuk ke bawah.
+                  </p>
+                </div>
+              ) : (
+                cart.map((item, index) => {
+                  const product = products.find(
+                    (entry) => entry.id === Number(item.productId)
+                  );
+                  const availableUnits = product
+                    ? [
+                        product.baseUnit,
+                        ...product.units
+                          .filter((unit) => unit.unitId !== product.baseUnitId)
+                          .map((unit) => unit.unit),
+                      ]
+                    : [];
+                  const totalStock = product
+                    ? product.batches.reduce(
+                        (sum, batch) => sum + Number(batch.qtyRemaining),
+                        0
+                      )
+                    : 0;
+                  const lineTotal =
+                    (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+                  const unitLabel =
+                    availableUnits.find((unit) => unit.id === item.unitId)?.code ??
+                    product?.baseUnit.code ??
+                    "";
+                  const selectedBulk = product?.units.find(
+                    (unit) =>
+                      unit.unitId === item.unitId &&
+                      unit.unitId !== product.baseUnitId
+                  );
+                  const autoPrice = product
+                    ? getUnitPrice(product, item.unitId)
+                    : 0;
+                  const isManualPrice = item.unitPrice !== autoPrice;
+
+                  return (
+                    <div
+                      key={`${item.productId}-${item.unitId}-${index}`}
+                      className="rounded-xl border border-zinc-200/80 bg-white p-3"
+                    >
+                      <div className="mb-2.5 flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-md bg-[#87482D]/10 text-[10px] font-bold tabular-nums text-[#87482D]">
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-zinc-900">
+                              {product?.name ?? "Barang"}
+                            </p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-zinc-400">
+                              {product && (
+                                <>
+                                  <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono font-semibold text-zinc-500">
+                                    {product.code}
+                                  </span>
+                                  <span>·</span>
+                                  <span className="inline-flex items-center gap-1">
+                                    <Layers className="size-3" />
+                                    Stok:
+                                    <strong
+                                      className={cn(
+                                        "font-semibold",
+                                        totalStock > 0
+                                          ? "text-emerald-600"
+                                          : "text-red-500"
+                                      )}
+                                    >
+                                      {totalStock} {product.baseUnit.code}
+                                    </strong>
+                                  </span>
+                                  {selectedBulk && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="font-medium text-[#87482D]">
+                                        1 {selectedBulk.unit.code} ={" "}
+                                        {Number(
+                                          selectedBulk.conversionToBase
+                                        ).toLocaleString("id-ID")}{" "}
+                                        {product.baseUnit.code}
+                                      </span>
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeRow(index)}
+                          aria-label="Hapus barang"
+                          className="grid size-8 shrink-0 place-items-center rounded-lg text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[88px_132px_minmax(0,1fr)_120px] sm:items-end">
+                        <div>
+                          <Label className="mb-1.5 block text-[10px] text-zinc-400">
+                            Satuan
+                          </Label>
+                          <Select
+                            value={item.unitId ? item.unitId.toString() : ""}
+                            onChange={(event) =>
+                              handleUnitChange(index, Number(event.target.value))
+                            }
+                            disabled={!product}
+                            className="h-10 text-xs"
+                          >
+                            {availableUnits.map((unit) => (
+                              <option key={unit.id} value={unit.id}>
+                                {unit.code}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label className="mb-1.5 block text-[10px] text-zinc-400">
+                            Qty
+                          </Label>
+                          <div className="flex h-10 items-center rounded-xl border border-zinc-200 bg-white shadow-xs">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleQtyChange(
+                                  index,
+                                  Math.max(1, (item.qty || 1) - 1)
+                                )
+                              }
+                              aria-label="Kurangi qty"
+                              className="grid h-9 w-9 place-items-center rounded-l-xl text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-700"
+                            >
+                              <Minus className="size-3.5" />
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.qty === 0 ? "" : item.qty}
+                              onChange={(event) =>
+                                handleQtyChange(index, Number(event.target.value))
+                              }
+                              onBlur={() => {
+                                if (!item.qty || item.qty < 1) {
+                                  handleQtyChange(index, 1);
+                                }
+                              }}
+                              className="h-full min-w-0 flex-1 border-0 bg-transparent text-center text-xs font-semibold text-zinc-900 outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleQtyChange(index, (item.qty || 0) + 1)
+                              }
+                              aria-label="Tambah qty"
+                              className="grid h-9 w-9 place-items-center rounded-r-xl text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-700"
+                            >
+                              <Plus className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="mb-1.5 flex items-center justify-between gap-1">
+                            <Label className="text-[10px] text-zinc-400">
+                              Harga / {unitLabel}
+                            </Label>
+                            {isManualPrice && (
+                              <button
+                                type="button"
+                                onClick={() => resetPrice(index)}
+                                title="Kembalikan ke harga otomatis FIFO"
+                                className="flex shrink-0 items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-amber-700 transition-colors hover:bg-amber-100"
+                              >
+                                <RotateCcw className="size-2.5" />
+                                Manual
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-zinc-400">
+                              Rp
+                            </span>
+                            <MoneyInput
+                              ariaLabel={`Harga satuan ${product?.name ?? ""}`}
+                              value={item.unitPrice}
+                              onChange={(value) =>
+                                handlePriceChange(index, value)
+                              }
+                              disabled={!product}
+                              className={cn(
+                                "h-10 pl-8 text-left text-xs",
+                                item.unitPrice <= 0 &&
+                                  "border-red-200 bg-red-50/40 text-red-600"
+                              )}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="mb-1.5 text-[10px] text-zinc-400">
+                            Subtotal
+                          </p>
+                          <p className="flex h-10 items-center justify-end text-sm font-bold tabular-nums text-zinc-900">
+                            Rp {lineTotal.toLocaleString("id-ID")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50/80 px-4 py-2.5">
               <span className="text-[10px] text-zinc-400">
+                Ketik di search bar atas untuk menambah barang lagi
+              </span>
+              <span className="text-[11px] font-semibold text-zinc-600">
                 {cart.length} barang · {totalQty} qty
               </span>
             </div>
@@ -1457,10 +1515,10 @@ export function SalesClient({
             <Button
               type="button"
               onClick={handleSubmitSale}
-              disabled={isPending || hasMissingPrice || hasUnselectedItems}
+              disabled={isPending || hasMissingPrice || isCartEmpty}
               title={
-                hasUnselectedItems
-                  ? "Pilih barang pada setiap baris terlebih dahulu"
+                isCartEmpty
+                  ? "Tambahkan minimal 1 barang terlebih dahulu"
                   : hasMissingPrice
                     ? "Isi harga jual barang terlebih dahulu"
                     : undefined
