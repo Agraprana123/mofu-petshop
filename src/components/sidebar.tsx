@@ -52,7 +52,7 @@ export function Sidebar({
       {/* Overlay mobile */}
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-zinc-950/45 backdrop-blur-sm transition-opacity duration-200 lg:hidden",
+          "fixed inset-0 z-40 bg-zinc-950/50 transition-opacity duration-150 lg:hidden",
           isMobileOpen
             ? "pointer-events-auto opacity-100"
             : "pointer-events-none opacity-0"
@@ -63,16 +63,15 @@ export function Sidebar({
 
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden bg-[#87482D] text-white shadow-[18px_0_50px_-24px_rgba(109,58,36,0.65)] transition-[width,transform] duration-300 ease-out lg:static lg:z-auto lg:h-screen lg:translate-x-0",
+          "fixed left-0 top-0 z-50 flex h-full flex-col overflow-hidden bg-[#87482D] text-white shadow-lg shadow-[#6d3a24]/30 transition-[width,transform] duration-200 ease-out lg:static lg:z-auto lg:h-screen lg:translate-x-0",
           collapsed ? "w-[272px] lg:w-[88px]" : "w-[272px]",
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Decorative layers */}
+        {/* Decorative layers (radial gradient tanpa blur filter agar ringan di GPU) */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -right-24 -top-20 size-64 rounded-full bg-white/[0.07] blur-2xl" />
-          <div className="absolute -bottom-20 -left-16 size-64 rounded-full bg-black/10 blur-2xl" />
-          <div className="absolute left-1/2 top-1/3 size-40 -translate-x-1/2 rounded-full bg-white/[0.04] blur-xl" />
+          <div className="absolute -right-24 -top-20 size-64 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.08)_0%,transparent_70%)]" />
+          <div className="absolute -bottom-20 -left-16 size-64 rounded-full bg-[radial-gradient(circle,rgba(0,0,0,0.14)_0%,transparent_70%)]" />
         </div>
 
         {/* Brand */}

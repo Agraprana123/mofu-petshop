@@ -126,7 +126,7 @@ nextjs-portal,
 @keyframes mofu-enter {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -137,7 +137,7 @@ nextjs-portal,
 @keyframes mofu-pop {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.97);
+    transform: translateY(4px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -157,7 +157,7 @@ nextjs-portal,
 @keyframes mofu-slide-right {
   from {
     opacity: 0;
-    transform: translateX(-8px);
+    transform: translateX(-6px);
   }
   to {
     opacity: 1;
@@ -166,39 +166,39 @@ nextjs-portal,
 }
 
 .animate-enter {
-  animation: mofu-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: mofu-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .animate-pop {
-  animation: mofu-pop 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: mofu-pop 0.14s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .animate-fade {
-  animation: mofu-fade 0.2s ease-out both;
+  animation: mofu-fade 0.12s ease-out both;
 }
 
 .animate-slide-right {
-  animation: mofu-slide-right 0.25s ease-out both;
+  animation: mofu-slide-right 0.15s ease-out both;
 }
 
 .page-enter > * {
-  animation: mofu-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: mofu-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .page-enter > *:nth-child(1) {
-  animation-delay: 0.02s;
+  animation-delay: 0.01s;
 }
 .page-enter > *:nth-child(2) {
-  animation-delay: 0.06s;
+  animation-delay: 0.025s;
 }
 .page-enter > *:nth-child(3) {
-  animation-delay: 0.1s;
+  animation-delay: 0.04s;
 }
 .page-enter > *:nth-child(4) {
-  animation-delay: 0.14s;
+  animation-delay: 0.055s;
 }
 .page-enter > *:nth-child(5) {
-  animation-delay: 0.18s;
+  animation-delay: 0.07s;
 }
 
 @media (prefers-reduced-motion: reduce) {

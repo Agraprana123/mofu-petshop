@@ -57,14 +57,14 @@ export function Dialog({
     >
       {/* Backdrop */}
       <div
-        className="fixed inset-0 animate-fade bg-zinc-950/45 backdrop-blur-[3px]"
+        className="fixed inset-0 animate-fade bg-zinc-950/55"
         onClick={onClose}
       />
 
       {/* Content */}
       <div
         className={cn(
-          "relative z-50 flex max-h-[92vh] w-full max-w-lg animate-pop flex-col overflow-hidden rounded-t-3xl border border-zinc-200/70 bg-white shadow-2xl shadow-zinc-950/20 sm:max-h-[90vh] sm:rounded-3xl",
+          "relative z-50 flex max-h-[92vh] w-full max-w-lg animate-pop flex-col overflow-hidden rounded-t-3xl border border-zinc-200/80 bg-white shadow-xl shadow-zinc-950/15 sm:max-h-[90vh] sm:rounded-3xl",
           className
         )}
       >

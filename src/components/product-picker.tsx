@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  memo,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -11,6 +13,12 @@ import {
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const idIntegerFormatter = new Intl.NumberFormat("id-ID");
+const idQtyFormatter = new Intl.NumberFormat("id-ID", {
+  maximumFractionDigits: 3,
+});
+const INITIAL_VISIBLE_COUNT = 60;
 
 export interface ProductPickerOption {
   id: number;
@@ -34,7 +42,7 @@ function normalize(value: string) {
 }
 
 function formatQty(value: number) {
-  return value.toLocaleString("id-ID", { maximumFractionDigits: 3 });
+  return idQtyFormatter.format(value);
 }
 
 function buildCategories(products: ProductPickerOption[]) {
@@ -175,6 +183,173 @@ function computeDropdownStyle(
   };
 }
 
+function isSameDropdownStyle(
+  a: DropdownPanelStyle | null,
+  b: DropdownPanelStyle
+) {
+  return (
+    a !== null &&
+    a.top === b.top &&
+    a.bottom === b.bottom &&
+    a.left === b.left &&
+    a.width === b.width &&
+    a.maxHeight === b.maxHeight
+  );
+}
+
+/**
+ * Mengukur posisi panel portal tanpa memicu layout thrashing saat user
+ * men-scroll isi daftar produk itu sendiri.
+ */
+function useDropdownPosition(
+  open: boolean,
+  anchorRef: React.RefObject<HTMLElement | null>,
+  panelRef: React.RefObject<HTMLDivElement | null>,
+  options: {
+    preferredWidth: number | "anchor";
+    preferredMaxHeight: number;
+    minBelowToStayDown: number;
+  }
+) {
+  const [panelStyle, setPanelStyle] = useState<DropdownPanelStyle | null>(null);
+  const { preferredWidth, preferredMaxHeight, minBelowToStayDown } = options;
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    let rafId = 0;
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const next = computeDropdownStyle(rect, {
+        preferredWidth:
+          preferredWidth === "anchor"
+            ? Math.max(rect.width, 320)
+            : preferredWidth,
+        preferredMaxHeight,
+        minBelowToStayDown,
+      });
+
+      setPanelStyle((prev) => (isSameDropdownStyle(prev, next) ? prev : next));
+    };
+
+    const handleScroll = (event: Event) => {
+      // Abaikan scroll yang berasal dari dalam panel dropdown itu sendiri
+      if (panelRef.current?.contains(event.target as Node)) return;
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        updatePosition();
+      });
+    };
+
+    const handleResize = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        updatePosition();
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [open, anchorRef, panelRef, preferredWidth, preferredMaxHeight, minBelowToStayDown]);
+
+  return panelStyle;
+}
+
+const ProductOptionRow = memo(function ProductOptionRow({
+  product,
+  index,
+  listboxId,
+  isActive,
+  isSelected,
+  disabledProduct,
+  onHover,
+  onPick,
+}: {
+  product: ProductPickerOption;
+  index: number;
+  listboxId: string;
+  isActive: boolean;
+  isSelected: boolean;
+  disabledProduct: boolean;
+  onHover: (index: number) => void;
+  onPick: (product: ProductPickerOption) => void;
+}) {
+  return (
+    <button
+      id={`${listboxId}-option-${product.id}`}
+      type="button"
+      role="option"
+      aria-selected={isSelected}
+      aria-disabled={disabledProduct}
+      data-option-index={index}
+      onMouseDown={(event) => event.preventDefault()}
+      onMouseEnter={() => {
+        if (!disabledProduct) onHover(index);
+      }}
+      onClick={() => onPick(product)}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left",
+        !disabledProduct && isActive && "bg-[#87482D]/8",
+        !disabledProduct && !isActive && "hover:bg-zinc-50",
+        disabledProduct && "cursor-not-allowed opacity-55"
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-xs font-semibold text-zinc-800">
+            {product.name}
+          </span>
+          {isSelected && <Check className="size-3 shrink-0 text-[#87482D]" />}
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
+          <span className="font-mono">{product.code}</span>
+          {product.category?.name && (
+            <>
+              <span>·</span>
+              <span className="truncate">{product.category.name}</span>
+            </>
+          )}
+          {product.price !== undefined && product.price > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-semibold text-zinc-600">
+                Rp {idIntegerFormatter.format(Math.round(product.price))}
+              </span>
+            </>
+          )}
+        </span>
+      </span>
+      {product.stock !== undefined && (
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums",
+            disabledProduct
+              ? "bg-red-50 text-red-600"
+              : "bg-emerald-50 text-emerald-700"
+          )}
+        >
+          {disabledProduct
+            ? "Habis"
+            : `${formatQty(product.stock)} ${product.baseUnit.code}`}
+        </span>
+      )}
+    </button>
+  );
+});
+
 function ProductDropdownPanel({
   panelRef,
   listRef,
@@ -208,11 +383,18 @@ function ProductDropdownPanel({
   searchHeader?: React.ReactNode;
   enterHint?: string;
 }) {
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+  const effectiveLimit = Math.max(visibleCount, activeIndex + 12);
+  const visibleResults = useMemo(
+    () => results.slice(0, effectiveLimit),
+    [results, effectiveLimit]
+  );
+
   return createPortal(
     <div
       ref={panelRef}
       style={panelStyle}
-      className="fixed z-[60] flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl shadow-zinc-950/25"
+      className="fixed z-[60] flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-950/15"
     >
       {(searchHeader || categories.length > 0) && (
         <div className="shrink-0 border-b border-zinc-100 p-2.5">
@@ -227,7 +409,10 @@ function ProductDropdownPanel({
                     key={item.name}
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => onCategoryChange(item.name)}
+                    onClick={() => {
+                      setVisibleCount(INITIAL_VISIBLE_COUNT);
+                      onCategoryChange(item.name);
+                    }}
                     className={cn(
                       "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors",
                       active
@@ -257,6 +442,17 @@ function ProductDropdownPanel({
         id={listboxId}
         role="listbox"
         aria-label="Daftar produk"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          if (
+            visibleCount < results.length &&
+            el.scrollHeight - el.scrollTop - el.clientHeight < 120
+          ) {
+            setVisibleCount((prev) =>
+              Math.min(results.length, prev + INITIAL_VISIBLE_COUNT)
+            );
+          }
+        }}
         className="min-h-0 flex-1 overflow-y-auto p-1.5"
       >
         {results.length === 0 ? (
@@ -272,84 +468,36 @@ function ProductDropdownPanel({
             </p>
           </div>
         ) : (
-          results.map((product, index) => {
-            const disabledProduct = isProductOutOfStock(product, allowOutOfStock);
-            const isActive = index === activeIndex;
-            const isSelected = selectedId !== undefined && product.id === selectedId;
-
-            return (
-              <button
+          <>
+            {visibleResults.map((product, index) => (
+              <ProductOptionRow
                 key={product.id}
-                id={`${listboxId}-option-${product.id}`}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                aria-disabled={disabledProduct}
-                data-option-index={index}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => {
-                  if (!disabledProduct) onActiveIndexChange(index);
-                }}
-                onClick={() => onPick(product)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-colors",
-                  !disabledProduct && isActive && "bg-[#87482D]/8",
-                  !disabledProduct && !isActive && "hover:bg-zinc-50",
-                  disabledProduct && "cursor-not-allowed opacity-55"
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate text-xs font-semibold text-zinc-800">
-                      {product.name}
-                    </span>
-                    {isSelected && (
-                      <Check className="size-3 shrink-0 text-[#87482D]" />
-                    )}
-                  </span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-zinc-400">
-                    <span className="font-mono">{product.code}</span>
-                    {product.category?.name && (
-                      <>
-                        <span>·</span>
-                        <span className="truncate">
-                          {product.category.name}
-                        </span>
-                      </>
-                    )}
-                    {product.price !== undefined && product.price > 0 && (
-                      <>
-                        <span>·</span>
-                        <span className="font-semibold text-zinc-600">
-                          Rp {Math.round(product.price).toLocaleString("id-ID")}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                </span>
-                {product.stock !== undefined && (
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums",
-                      disabledProduct
-                        ? "bg-red-50 text-red-600"
-                        : "bg-emerald-50 text-emerald-700"
-                    )}
-                  >
-                    {disabledProduct
-                      ? "Habis"
-                      : `${formatQty(product.stock)} ${product.baseUnit.code}`}
-                  </span>
-                )}
-              </button>
-            );
-          })
+                product={product}
+                index={index}
+                listboxId={listboxId}
+                isActive={index === activeIndex}
+                isSelected={selectedId !== undefined && product.id === selectedId}
+                disabledProduct={isProductOutOfStock(product, allowOutOfStock)}
+                onHover={onActiveIndexChange}
+                onPick={onPick}
+              />
+            ))}
+            {visibleResults.length < results.length && (
+              <div className="px-2.5 py-2 text-center text-[10px] text-zinc-400">
+                Gulir ke bawah untuk memuat{" "}
+                {idIntegerFormatter.format(
+                  results.length - visibleResults.length
+                )}{" "}
+                produk lainnya...
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div className="flex shrink-0 items-center justify-between border-t border-zinc-100 bg-zinc-50/70 px-3 py-2 text-[10px] text-zinc-400">
         <span className="font-medium">
-          {results.length.toLocaleString("id-ID")} produk cocok
+          {idIntegerFormatter.format(results.length)} produk cocok
         </span>
         <span className="hidden items-center gap-1 sm:flex">
           <kbd className="rounded border border-zinc-200 bg-white px-1 py-0.5 font-sans text-[9px] font-semibold">
@@ -390,14 +538,20 @@ export function ProductQuickSearch({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [panelStyle, setPanelStyle] = useState<DropdownPanelStyle | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const skipNextFocusOpenRef = useRef(false);
+  const keyboardNavRef = useRef(false);
   const listboxId = useId();
+
+  const panelStyle = useDropdownPosition(open, rootRef, panelRef, {
+    preferredWidth: "anchor",
+    preferredMaxHeight: 340,
+    minBelowToStayDown: 180,
+  });
 
   const categories = useMemo(() => buildCategories(products), [products]);
   const results = useMemo(
@@ -422,55 +576,33 @@ export function ProductQuickSearch({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-
-    const updatePosition = () => {
-      const root = rootRef.current;
-      if (!root) return;
-
-      const rect = root.getBoundingClientRect();
-      setPanelStyle(
-        computeDropdownStyle(rect, {
-          preferredWidth: Math.max(rect.width, 320),
-          preferredMaxHeight: 340,
-          minBelowToStayDown: 180,
-        })
-      );
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open]);
-
   useEffect(() => {
-    if (!open) return;
+    if (!open || !keyboardNavRef.current) return;
+    keyboardNavRef.current = false;
     const active = listRef.current?.querySelector<HTMLElement>(
       `[data-option-index="${activeIndex}"]`
     );
     active?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, open]);
 
-  function pickProduct(product: ProductPickerOption) {
-    if (isProductOutOfStock(product, allowOutOfStock)) return;
-    onSelect(product.id);
-    setQuery("");
-    setCategory("ALL");
-    setActiveIndex(0);
-    setOpen(false);
-    skipNextFocusOpenRef.current = true;
-    inputRef.current?.focus();
-  }
+  const pickProduct = useCallback(
+    (product: ProductPickerOption) => {
+      if (isProductOutOfStock(product, allowOutOfStock)) return;
+      onSelect(product.id);
+      setQuery("");
+      setCategory("ALL");
+      setActiveIndex(0);
+      setOpen(false);
+      skipNextFocusOpenRef.current = true;
+      inputRef.current?.focus();
+    },
+    [allowOutOfStock, onSelect]
+  );
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      keyboardNavRef.current = true;
       if (!open) {
         setOpen(true);
         setActiveIndex(0);
@@ -484,6 +616,7 @@ export function ProductQuickSearch({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       if (open) {
+        keyboardNavRef.current = true;
         setActiveIndex((prev) =>
           moveActiveIndex(results, prev, -1, allowOutOfStock)
         );
@@ -626,7 +759,6 @@ export function ProductPicker({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [panelStyle, setPanelStyle] = useState<DropdownPanelStyle | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -634,7 +766,14 @@ export function ProductPicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const shouldFocusRef = useRef(false);
+  const keyboardNavRef = useRef(false);
   const listboxId = useId();
+
+  const panelStyle = useDropdownPosition(open, triggerRef, panelRef, {
+    preferredWidth: 420,
+    preferredMaxHeight: 360,
+    minBelowToStayDown: 220,
+  });
 
   const selected = products.find((product) => product.id === value);
 
@@ -668,36 +807,9 @@ export function ProductPicker({
     }
   }, [open, panelStyle]);
 
-  // Panel dirender lewat portal agar tidak terpotong area scroll dialog.
-  useLayoutEffect(() => {
-    if (!open) return;
-
-    const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-
-      const rect = trigger.getBoundingClientRect();
-      setPanelStyle(
-        computeDropdownStyle(rect, {
-          preferredWidth: 420,
-          preferredMaxHeight: 360,
-          minBelowToStayDown: 220,
-        })
-      );
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open]);
-
   useEffect(() => {
-    if (!open) return;
+    if (!open || !keyboardNavRef.current) return;
+    keyboardNavRef.current = false;
     const active = listRef.current?.querySelector<HTMLElement>(
       `[data-option-index="${activeIndex}"]`
     );
@@ -712,16 +824,20 @@ export function ProductPicker({
     setOpen(true);
   }
 
-  function pickProduct(product: ProductPickerOption) {
-    if (isProductOutOfStock(product, allowOutOfStock)) return;
-    onChange(product.id);
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
+  const pickProduct = useCallback(
+    (product: ProductPickerOption) => {
+      if (isProductOutOfStock(product, allowOutOfStock)) return;
+      onChange(product.id);
+      setOpen(false);
+      triggerRef.current?.focus();
+    },
+    [allowOutOfStock, onChange]
+  );
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      keyboardNavRef.current = true;
       setActiveIndex((prev) =>
         moveActiveIndex(results, prev, 1, allowOutOfStock)
       );
@@ -729,6 +845,7 @@ export function ProductPicker({
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      keyboardNavRef.current = true;
       setActiveIndex((prev) =>
         moveActiveIndex(results, prev, -1, allowOutOfStock)
       );

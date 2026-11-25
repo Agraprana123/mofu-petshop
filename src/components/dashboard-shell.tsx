@@ -117,7 +117,7 @@ export function DashboardShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 shrink-0 border-b border-zinc-200/70 bg-[#f5f6f8]/85 backdrop-blur-xl">
+        <header className="sticky top-0 z-30 shrink-0 border-b border-zinc-200/80 bg-[#f5f6f8]">
           <div className="flex h-16 items-center gap-3 px-4 lg:px-7">
             <button
               onClick={() => setMobileOpen(true)}

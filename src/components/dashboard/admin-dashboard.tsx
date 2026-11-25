@@ -140,8 +140,8 @@ export function AdminDashboard({
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#87482D] via-[#7c4229] to-[#5f3220] p-6 text-white shadow-xl shadow-[#87482D]/20 sm:p-8">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -right-20 -top-24 size-80 rounded-full bg-white/10 blur-2xl" />
-          <div className="absolute -bottom-28 left-1/3 size-72 rounded-full bg-black/10 blur-2xl" />
+          <div className="absolute -right-20 -top-24 size-80 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.12)_0%,transparent_70%)]" />
+          <div className="absolute -bottom-28 left-1/3 size-72 rounded-full bg-[radial-gradient(circle,rgba(0,0,0,0.14)_0%,transparent_70%)]" />
           <div className="absolute right-10 top-1/2 hidden -translate-y-1/2 rotate-12 opacity-[0.07] lg:block">
             <Sparkles className="size-64" />
           </div>
@@ -178,7 +178,7 @@ export function AdminDashboard({
             </div>
           </div>
 
-          <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-sm">
+          <div className="rounded-2xl bg-white/12 p-4 ring-1 ring-white/15">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
                 Omzet hari ini

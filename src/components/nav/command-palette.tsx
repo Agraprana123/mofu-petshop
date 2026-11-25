@@ -86,11 +86,11 @@ export function CommandPalette({ open, onClose, role }: CommandPaletteProps) {
       aria-label="Pencarian menu"
     >
       <div
-        className="fixed inset-0 animate-fade bg-zinc-950/40 backdrop-blur-[3px]"
+        className="fixed inset-0 animate-fade bg-zinc-950/50"
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-xl animate-pop overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-2xl shadow-zinc-950/25">
+      <div className="relative z-10 w-full max-w-xl animate-pop overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-xl shadow-zinc-950/20">
         <div className="flex items-center gap-3 border-b border-zinc-100 px-4">
           <Search className="size-5 shrink-0 text-zinc-400" />
           <input
