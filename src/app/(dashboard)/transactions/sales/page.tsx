@@ -39,7 +39,7 @@ export default async function SalesPage() {
         units: { include: { unit: true } },
         batches: {
           where: { qtyRemaining: { gt: 0 } },
-          orderBy: { receivedAt: "asc" },
+          orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
         },
       },
     }),
@@ -57,6 +57,9 @@ export default async function SalesPage() {
           Number(activeBatch.costPerBase) * (1 + Number(margin) / 100)
         );
       }
+    }
+    if (fallbackSellPrice <= 0 && Number(p.sellPrice ?? 0) > 0) {
+      fallbackSellPrice = Number(p.sellPrice);
     }
     return {
       ...p,
