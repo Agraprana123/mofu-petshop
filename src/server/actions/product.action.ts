@@ -252,6 +252,36 @@ async function syncPricesToBatches(
   }
 }
 
+function validateBulkUnitInput(
+  baseUnitId: number,
+  bulkUnitId: number | null,
+  bulkConversion: number | null
+): string | null {
+  if (!bulkUnitId) return null;
+  if (bulkUnitId === baseUnitId) {
+    return "Satuan besar tidak boleh sama dengan satuan dasar";
+  }
+  if (
+    bulkConversion === null ||
+    !Number.isFinite(bulkConversion) ||
+    bulkConversion <= 0
+  ) {
+    return "Isi per satuan besar harus berupa angka lebih dari 0";
+  }
+  return null;
+}
+
+function revalidateProductDependentPaths() {
+  revalidatePath("/master/products");
+  revalidatePath("/transactions/purchases");
+  revalidatePath("/transactions/sales");
+  revalidatePath("/stock/in");
+  revalidatePath("/stock/out");
+  revalidatePath("/reports/stock");
+  revalidatePath("/reports/low-stock");
+  revalidatePath("/");
+}
+
 export async function createProduct(formData: FormData) {
   let code = (formData.get("code") as string)?.trim().toUpperCase();
   const name = (formData.get("name") as string)?.trim();
@@ -264,6 +294,12 @@ export async function createProduct(formData: FormData) {
   const minStockRaw = (formData.get("minStock") as string)?.trim();
   const minStock = minStockRaw ? Number(minStockRaw) : 5;
 
+  // Satuan besar / grosir
+  const bulkUnitIdStr = (formData.get("bulkUnitId") as string)?.trim();
+  const bulkUnitId = bulkUnitIdStr ? parseInt(bulkUnitIdStr) : null;
+  const bulkConversionStr = (formData.get("bulkConversion") as string)?.trim();
+  const bulkConversion = bulkConversionStr ? Number(bulkConversionStr) : null;
+
   if (!name) return { error: "Nama produk harus diisi" };
   if (!categoryId) return { error: "Kategori harus dipilih" };
   if (!baseUnitId) return { error: "Satuan dasar harus dipilih" };
@@ -271,6 +307,8 @@ export async function createProduct(formData: FormData) {
   if (!Number.isFinite(minStock) || minStock < 0) {
     return { error: "Minimal stok harus berupa angka 0 atau lebih" };
   }
+  const bulkError = validateBulkUnitInput(baseUnitId, bulkUnitId, bulkConversion);
+  if (bulkError) return { error: bulkError };
 
   try {
     if (!code) code = await nextProductCode(categoryId);
@@ -289,6 +327,17 @@ export async function createProduct(formData: FormData) {
         },
       });
 
+      // Simpan satuan besar jika dipilih
+      if (bulkUnitId && bulkConversion) {
+        await tx.productUnit.create({
+          data: {
+            productId: product.id,
+            unitId: bulkUnitId,
+            conversionToBase: new Decimal(bulkConversion),
+          },
+        });
+      }
+
       await syncPricesToBatches(tx, product.id, {
         buyPrice: buy.value,
         sellPrice: sell.value,
@@ -299,7 +348,7 @@ export async function createProduct(formData: FormData) {
       return product;
     });
 
-    revalidatePath("/master/products");
+    revalidateProductDependentPaths();
     return { success: true, code: created.code };
   } catch (err) {
     console.error("Create product error:", err);
@@ -320,6 +369,12 @@ export async function updateProduct(id: number, formData: FormData) {
   const minStockRaw = (formData.get("minStock") as string)?.trim();
   const minStock = minStockRaw ? Number(minStockRaw) : 5;
 
+  // Satuan besar / grosir
+  const bulkUnitIdStr = (formData.get("bulkUnitId") as string)?.trim();
+  const bulkUnitId = bulkUnitIdStr ? parseInt(bulkUnitIdStr) : null;
+  const bulkConversionStr = (formData.get("bulkConversion") as string)?.trim();
+  const bulkConversion = bulkConversionStr ? Number(bulkConversionStr) : null;
+
   if (!code) return { error: "Kode produk harus diisi" };
   if (!name) return { error: "Nama produk harus diisi" };
   if (!categoryId) return { error: "Kategori harus dipilih" };
@@ -328,6 +383,8 @@ export async function updateProduct(id: number, formData: FormData) {
   if (!Number.isFinite(minStock) || minStock < 0) {
     return { error: "Minimal stok harus berupa angka 0 atau lebih" };
   }
+  const bulkError = validateBulkUnitInput(baseUnitId, bulkUnitId, bulkConversion);
+  if (bulkError) return { error: bulkError };
 
   try {
     const previous = await prisma.product.findUnique({
@@ -352,6 +409,18 @@ export async function updateProduct(id: number, formData: FormData) {
         },
       });
 
+      // Kelola satuan besar: hapus semua lalu buat ulang jika ada
+      await tx.productUnit.deleteMany({ where: { productId: id } });
+      if (bulkUnitId && bulkConversion) {
+        await tx.productUnit.create({
+          data: {
+            productId: id,
+            unitId: bulkUnitId,
+            conversionToBase: new Decimal(bulkConversion),
+          },
+        });
+      }
+
       await syncPricesToBatches(tx, id, {
         buyPrice: buy.value,
         sellPrice: sell.value,
@@ -360,11 +429,7 @@ export async function updateProduct(id: number, formData: FormData) {
       });
     });
 
-    revalidatePath("/master/products");
-    revalidatePath("/");
-    revalidatePath("/transactions/sales");
-    revalidatePath("/reports/stock");
-    revalidatePath("/reports/low-stock");
+    revalidateProductDependentPaths();
     return { success: true };
   } catch (err) {
     console.error("Update product error:", err);
@@ -442,6 +507,59 @@ export async function deleteProduct(id: number, forceSoftDelete = false) {
   }
 }
 
+// Kelola satuan besar / grosir utama per produk (dapat dipanggil dari Master Produk maupun Pembelian)
+export async function setProductBulkUnit(
+  productId: number,
+  bulkUnitId: number | null,
+  conversionToBase: number | null
+) {
+  try {
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, baseUnitId: true },
+    });
+    if (!product) return { error: "Produk tidak ditemukan" };
+
+    const bulkError = validateBulkUnitInput(
+      product.baseUnitId,
+      bulkUnitId,
+      conversionToBase
+    );
+    if (bulkError) return { error: bulkError };
+
+    const updatedUnits = await prisma.$transaction(async (tx) => {
+      await tx.productUnit.deleteMany({ where: { productId } });
+      if (bulkUnitId && conversionToBase) {
+        await tx.productUnit.create({
+          data: {
+            productId,
+            unitId: bulkUnitId,
+            conversionToBase: new Decimal(conversionToBase),
+          },
+        });
+      }
+      return tx.productUnit.findMany({
+        where: { productId },
+        include: { unit: true },
+      });
+    });
+
+    revalidateProductDependentPaths();
+    return {
+      success: true,
+      units: JSON.parse(JSON.stringify(updatedUnits)) as {
+        id: number;
+        unitId: number;
+        conversionToBase: string;
+        unit: { id: number; code: string; name: string };
+      }[],
+    };
+  } catch (err) {
+    console.error("Set product bulk unit error:", err);
+    return { error: "Gagal menyimpan satuan besar produk" };
+  }
+}
+
 // Manage product unit conversions
 export async function upsertProductUnit(
   productId: number,
@@ -453,7 +571,7 @@ export async function upsertProductUnit(
     update: { conversionToBase },
     create: { productId, unitId, conversionToBase },
   });
-  revalidatePath("/master/products");
+  revalidateProductDependentPaths();
   return { success: true };
 }
 
@@ -461,7 +579,7 @@ export async function deleteProductUnit(productId: number, unitId: number) {
   await prisma.productUnit.delete({
     where: { productId_unitId: { productId, unitId } },
   });
-  revalidatePath("/master/products");
+  revalidateProductDependentPaths();
   return { success: true };
 }
 

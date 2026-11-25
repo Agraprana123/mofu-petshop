@@ -16,6 +16,7 @@ import {
   ChevronRight,
   History,
   Wand2,
+  ArrowRight,
   Loader2,
   Receipt,
   Wallet,
@@ -129,6 +130,10 @@ export function ProductsClient({
   const [formBaseUnitId, setFormBaseUnitId] = useState("");
   const [autoCodeLoading, setAutoCodeLoading] = useState(false);
 
+  // Satuan besar / grosir
+  const [bulkUnitId, setBulkUnitId] = useState("");
+  const [bulkConversion, setBulkConversion] = useState("");
+
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
@@ -197,6 +202,8 @@ export function ProductsClient({
     setFormCode("");
     setFormCategoryId("");
     setFormBaseUnitId("");
+    setBulkUnitId("");
+    setBulkConversion("");
     setModalOpen(true);
   }
 
@@ -206,6 +213,12 @@ export function ProductsClient({
     setFormCode(product.code);
     setFormCategoryId(product.categoryId.toString());
     setFormBaseUnitId(product.baseUnitId.toString());
+    // Isi satuan besar dari data produk (hilangkan nol desimal berlebih)
+    const existingBulk = product.units.length > 0 ? product.units[0] : null;
+    setBulkUnitId(existingBulk ? existingBulk.unitId.toString() : "");
+    setBulkConversion(
+      existingBulk ? String(Number(existingBulk.conversionToBase)) : ""
+    );
     setModalOpen(true);
   }
 
@@ -233,6 +246,24 @@ export function ProductsClient({
   }
 
   function handleSubmit(formData: FormData) {
+    setError("");
+    // Validasi & tambahkan satuan besar ke formData
+    if (bulkUnitId) {
+      if (bulkUnitId === formBaseUnitId) {
+        setError("Satuan besar tidak boleh sama dengan satuan dasar.");
+        return;
+      }
+      const parsedConv = Number(bulkConversion);
+      if (!bulkConversion.trim() || !Number.isFinite(parsedConv) || parsedConv <= 0) {
+        setError("Masukkan jumlah isi per satuan besar (lebih dari 0).");
+        return;
+      }
+      formData.set("bulkUnitId", bulkUnitId);
+      formData.set("bulkConversion", bulkConversion.trim());
+    } else {
+      formData.delete("bulkUnitId");
+      formData.delete("bulkConversion");
+    }
     startTransition(async () => {
       const result = editing
         ? await updateProduct(editing.id, formData)
@@ -452,12 +483,13 @@ export function ProductsClient({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1060px] text-sm">
+            <table className="w-full min-w-[1140px] text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/60 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400">
                   <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">Produk</th>
                   <th className="px-4 py-3">Kategori</th>
+                  <th className="px-4 py-3">Satuan Besar</th>
                   <th className="px-4 py-3">Harga Beli</th>
                   <th className="px-4 py-3">Harga Jual</th>
                   <th className="px-4 py-3 text-center">Stok Gudang</th>
@@ -491,6 +523,30 @@ export function ProductsClient({
                     {/* Kategori */}
                     <td className="px-4 py-3 text-xs font-medium text-zinc-600">
                       {p.category.name}
+                    </td>
+
+                    {/* Satuan Besar */}
+                    <td className="px-4 py-3">
+                      {p.units.length > 0 ? (
+                        <div>
+                          {p.units.map((pu) => (
+                            <div
+                              key={pu.id}
+                              className="flex items-center gap-1.5"
+                            >
+                              <span className="rounded bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#87482D]">
+                                {pu.unit.code}
+                              </span>
+                              <span className="text-[11px] text-zinc-500">
+                                = {Number(pu.conversionToBase).toLocaleString("id-ID")}{" "}
+                                {p.baseUnit.code}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-zinc-300">—</span>
+                      )}
                     </td>
 
                     {/* Harga Beli */}
@@ -774,7 +830,14 @@ export function ProductsClient({
                 id="baseUnitId"
                 name="baseUnitId"
                 value={formBaseUnitId}
-                onChange={(event) => setFormBaseUnitId(event.target.value)}
+                onChange={(event) => {
+                  const nextBase = event.target.value;
+                  setFormBaseUnitId(nextBase);
+                  if (nextBase && nextBase === bulkUnitId) {
+                    setBulkUnitId("");
+                    setBulkConversion("");
+                  }
+                }}
                 required
               >
                 <option value="">Pilih Satuan</option>
@@ -784,6 +847,86 @@ export function ProductsClient({
                   </option>
                 ))}
               </Select>
+            </div>
+          </div>
+
+          {/* ── Satuan Besar / Grosir ── */}
+          <div className="rounded-xl border border-[#87482D]/15 bg-[#87482D]/[0.03] p-4">
+            <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-[#87482D]">
+              <Package className="size-3.5" />
+              Satuan Besar / Grosir
+            </p>
+            <p className="mb-3 text-[11px] text-zinc-500">
+              Pilih nama satuan grosir (contoh: SAK, DUS) lalu atur berapa{" "}
+              <strong className="font-semibold text-zinc-700">
+                {selectedBaseUnit?.code ?? "PCS"}
+              </strong>{" "}
+              per satuan besar untuk dipakai saat pembelian.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="bulkUnitId">
+                  Satuan Grosir / Besar
+                  <span className="ml-1 text-xs font-normal text-zinc-400">
+                    opsional
+                  </span>
+                </Label>
+                <Select
+                  id="bulkUnitId"
+                  value={bulkUnitId}
+                  onChange={(e) => {
+                    const nextUnit = e.target.value;
+                    setBulkUnitId(nextUnit);
+                    if (!nextUnit) setBulkConversion("");
+                  }}
+                >
+                  <option value="">Tidak ada satuan besar</option>
+                  {units
+                    .filter((u) => u.id.toString() !== formBaseUnitId)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.code} - {u.name}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="bulkConversion">
+                  Isi per{" "}
+                  {bulkUnitId
+                    ? units.find((u) => u.id.toString() === bulkUnitId)?.code
+                    : "Satuan Besar"}
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="bulkConversion"
+                    type="number"
+                    min="0.01"
+                    step="any"
+                    placeholder={bulkUnitId ? "Contoh: 20" : "Pilih satuan dulu"}
+                    value={bulkConversion}
+                    onChange={(e) => setBulkConversion(e.target.value)}
+                    disabled={!bulkUnitId}
+                    required={Boolean(bulkUnitId)}
+                    className="pr-16 font-semibold"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-zinc-500">
+                    {selectedBaseUnit?.code ?? "PCS"}
+                  </span>
+                </div>
+                {bulkUnitId && bulkConversion && Number(bulkConversion) > 0 && (
+                  <p className="flex items-center gap-1.5 pt-0.5 text-xs text-emerald-700">
+                    <ArrowRight className="size-3 shrink-0" />
+                    <span className="font-semibold">
+                      1 {units.find((u) => u.id.toString() === bulkUnitId)?.code} ={" "}
+                      {Number(bulkConversion).toLocaleString("id-ID", {
+                        maximumFractionDigits: 4,
+                      })}{" "}
+                      {selectedBaseUnit?.code ?? "PCS"}
+                    </span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

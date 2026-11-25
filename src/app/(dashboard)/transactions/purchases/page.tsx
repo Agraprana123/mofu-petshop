@@ -11,7 +11,7 @@ export default async function PurchasesPage() {
     redirect("/");
   }
 
-  const [purchases, suppliers, products] = await Promise.all([
+  const [purchases, suppliers, products, units] = await Promise.all([
     prisma.purchase.findMany({
       orderBy: { date: "desc" },
       include: {
@@ -38,6 +38,9 @@ export default async function PurchasesPage() {
         units: { include: { unit: true } },
       },
     }),
+    prisma.unit.findMany({
+      orderBy: { code: "asc" },
+    }),
   ]);
 
   return (
@@ -45,6 +48,7 @@ export default async function PurchasesPage() {
       purchases={JSON.parse(JSON.stringify(purchases))}
       suppliers={JSON.parse(JSON.stringify(suppliers))}
       products={JSON.parse(JSON.stringify(products))}
+      units={JSON.parse(JSON.stringify(units))}
     />
   );
 }

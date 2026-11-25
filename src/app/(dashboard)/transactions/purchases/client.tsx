@@ -12,6 +12,10 @@ import {
   Truck,
   AlertCircle,
   Wallet,
+  Package,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,12 +24,19 @@ import { Select } from "@/components/ui/select";
 import { Dialog } from "@/components/ui/dialog";
 import { ProductPicker } from "@/components/product-picker";
 import { createPurchaseAction } from "@/server/actions/purchase.action";
+import { setProductBulkUnit } from "@/server/actions/product.action";
 import { cn } from "@/lib/utils";
 
 interface SupplierOption {
   id: number;
   name: string;
   phone: string | null;
+}
+
+interface UnitOption {
+  id: number;
+  code: string;
+  name: string;
 }
 
 interface ProductOption {
@@ -98,10 +109,12 @@ export function PurchasesClient({
   purchases,
   suppliers,
   products,
+  units,
 }: {
   purchases: PurchaseItem[];
   suppliers: SupplierOption[];
   products: ProductOption[];
+  units: UnitOption[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -119,6 +132,23 @@ export function PurchasesClient({
   );
   const [draftItems, setDraftItems] = useState<DraftItem[]>([emptyDraftItem()]);
 
+  // Override satuan besar lokal agar langsung sinkron saat diedit di modal pembelian
+  const [productUnitOverrides, setProductUnitOverrides] = useState<
+    Record<number, ProductOption["units"]>
+  >({});
+  const [editingBulkRow, setEditingBulkRow] = useState<number | null>(null);
+  const [inlineBulkUnitId, setInlineBulkUnitId] = useState("");
+  const [inlineBulkConversion, setInlineBulkConversion] = useState("");
+  const [inlineBulkSaving, setInlineBulkSaving] = useState(false);
+  const [inlineBulkError, setInlineBulkError] = useState("");
+
+  function resolveProduct(productId: number): ProductOption | undefined {
+    const found = products.find((p) => p.id === Number(productId));
+    if (!found) return undefined;
+    const override = productUnitOverrides[found.id];
+    return override ? { ...found, units: override } : found;
+  }
+
   const filtered = purchases.filter(
     (p) =>
       p.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
@@ -132,11 +162,13 @@ export function PurchasesClient({
     setSupplierRef("");
     setPurchaseDate(new Date().toISOString().slice(0, 10));
     setDraftItems([emptyDraftItem()]);
+    setEditingBulkRow(null);
+    setInlineBulkError("");
     setCreateModalOpen(true);
   }
 
   function handleProductChange(index: number, newProductId: number) {
-    const prod = products.find((p) => p.id === newProductId);
+    const prod = resolveProduct(newProductId);
     const updated = [...draftItems];
     updated[index] = {
       ...updated[index],
@@ -148,11 +180,15 @@ export function PurchasesClient({
       sellPrice: Number(prod?.sellPrice ?? 0),
     };
     setDraftItems(updated);
+    if (editingBulkRow === index) {
+      setEditingBulkRow(null);
+      setInlineBulkError("");
+    }
   }
 
   function handleUnitChange(index: number, newUnitId: number) {
     const updated = [...draftItems];
-    const prod = products.find((p) => p.id === Number(updated[index].productId));
+    const prod = resolveProduct(Number(updated[index].productId));
     const oldConversion = getConversion(prod, updated[index].unitId);
     const newConversion = getConversion(prod, newUnitId);
     updated[index].unitId = newUnitId;
@@ -163,6 +199,67 @@ export function PurchasesClient({
       );
     }
     setDraftItems(updated);
+  }
+
+  function openInlineBulkEditor(index: number, prod: ProductOption) {
+    const existing = prod.units.find((u) => u.unitId !== prod.baseUnitId);
+    setEditingBulkRow(index);
+    setInlineBulkUnitId(existing ? existing.unitId.toString() : "");
+    setInlineBulkConversion(
+      existing ? String(Number(existing.conversionToBase)) : ""
+    );
+    setInlineBulkError("");
+  }
+
+  async function saveInlineBulkEditor(index: number, prod: ProductOption) {
+    setInlineBulkError("");
+    const parsedUnitId = inlineBulkUnitId ? Number(inlineBulkUnitId) : null;
+    const parsedConv = inlineBulkConversion ? Number(inlineBulkConversion) : null;
+
+    if (parsedUnitId && (!parsedConv || !Number.isFinite(parsedConv) || parsedConv <= 0)) {
+      setInlineBulkError("Isi per satuan besar harus lebih dari 0.");
+      return;
+    }
+
+    setInlineBulkSaving(true);
+    try {
+      const res = await setProductBulkUnit(prod.id, parsedUnitId, parsedConv);
+      if (res.error || !res.units) {
+        setInlineBulkError(res.error || "Gagal menyimpan satuan besar.");
+        return;
+      }
+
+      const nextUnits = res.units;
+      setProductUnitOverrides((prev) => ({ ...prev, [prod.id]: nextUnits }));
+
+      // Sinkronkan satuan baris aktif jika satuan besar baru ditambahkan/diubah/dihapus
+      const currentItem = draftItems[index];
+      const oldConversion = getConversion(prod, currentItem.unitId);
+      const nextProd: ProductOption = { ...prod, units: nextUnits };
+
+      let nextUnitId = currentItem.unitId;
+      if (parsedUnitId && nextUnits.some((u) => u.unitId === parsedUnitId)) {
+        nextUnitId = parsedUnitId;
+      } else if (!parsedUnitId || !nextUnits.some((u) => u.unitId === nextUnitId)) {
+        nextUnitId = prod.baseUnitId;
+      }
+
+      const newConversion = getConversion(nextProd, nextUnitId);
+      const updated = [...draftItems];
+      updated[index] = {
+        ...currentItem,
+        unitId: nextUnitId,
+        sellPrice:
+          currentItem.sellPrice > 0
+            ? Math.round((currentItem.sellPrice / oldConversion) * newConversion)
+            : currentItem.sellPrice,
+      };
+      setDraftItems(updated);
+      setEditingBulkRow(null);
+      router.refresh();
+    } finally {
+      setInlineBulkSaving(false);
+    }
   }
 
   function handleQtyChange(index: number, qty: number) {
@@ -190,6 +287,11 @@ export function PurchasesClient({
   function removeRow(index: number) {
     if (draftItems.length <= 1) return;
     setDraftItems(draftItems.filter((_, i) => i !== index));
+    if (editingBulkRow === index) {
+      setEditingBulkRow(null);
+    } else if (editingBulkRow !== null && editingBulkRow > index) {
+      setEditingBulkRow(editingBulkRow - 1);
+    }
   }
 
   const grandTotal = draftItems.reduce(
@@ -530,18 +632,29 @@ export function PurchasesClient({
 
             <div className="divide-y divide-zinc-100">
               {draftItems.map((item, index) => {
-                const prod = products.find((p) => p.id === Number(item.productId));
-                const availableUnits = prod
-                  ? [prod.baseUnit, ...prod.units.map((u) => u.unit)]
+                const prod = resolveProduct(item.productId);
+                const bulkUnits = prod
+                  ? prod.units.filter((u) => u.unitId !== prod.baseUnitId)
                   : [];
-                const subtotal =
-                  (Number(item.qty) || 0) * (Number(item.unitCost) || 0);
+                const availableUnits = prod
+                  ? [prod.baseUnit, ...bulkUnits.map((u) => u.unit)]
+                  : [];
+                const activeBulk = bulkUnits[0] ?? null;
+                const conversion = getConversion(prod, item.unitId);
+                const isBulkSelected = Boolean(
+                  prod && item.unitId && item.unitId !== prod.baseUnitId
+                );
+                const qtyNum = Number(item.qty) || 0;
+                const qtyBase = Math.round(qtyNum * conversion * 1000) / 1000;
+                const subtotal = qtyNum * (Number(item.unitCost) || 0);
                 const unitCost = Number(item.unitCost) || 0;
+                const costPerBase = conversion > 0 ? unitCost / conversion : unitCost;
                 const sellPrice = Number(item.sellPrice) || 0;
                 const margin =
                   unitCost > 0 && sellPrice > 0
                     ? ((sellPrice - unitCost) / unitCost) * 100
                     : null;
+                const isEditingInlineBulk = editingBulkRow === index && prod;
 
                 return (
                   <div
@@ -685,6 +798,165 @@ export function PurchasesClient({
                         </button>
                       </div>
                     </div>
+
+                    {/* Info satuan besar & edit cepat konversi saat pembelian */}
+                    {prod && (
+                      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-50/80 px-3 py-1.5 text-[11px] text-zinc-500">
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                          {activeBulk ? (
+                            <span>
+                              Satuan besar:{" "}
+                              <strong className="font-semibold text-zinc-700">
+                                1 {activeBulk.unit.code} ={" "}
+                                {Number(activeBulk.conversionToBase).toLocaleString("id-ID")}{" "}
+                                {prod.baseUnit.code}
+                              </strong>
+                            </span>
+                          ) : (
+                            <span>
+                              Satuan dasar:{" "}
+                              <strong className="font-semibold text-zinc-700">
+                                {prod.baseUnit.code}
+                              </strong>{" "}
+                              (belum ada satuan besar)
+                            </span>
+                          )}
+
+                          {isBulkSelected && qtyBase > 0 && (
+                            <span className="text-emerald-700">
+                              · Masuk gudang:{" "}
+                              <strong className="font-semibold">
+                                +{qtyBase.toLocaleString("id-ID")}{" "}
+                                {prod.baseUnit.code}
+                              </strong>
+                            </span>
+                          )}
+
+                          {isBulkSelected && unitCost > 0 && (
+                            <span>
+                              · Modal:{" "}
+                              <strong className="font-semibold text-zinc-700">
+                                Rp {Math.round(costPerBase).toLocaleString("id-ID")}/
+                                {prod.baseUnit.code}
+                              </strong>
+                            </span>
+                          )}
+                        </div>
+
+                        {!isEditingInlineBulk && (
+                          <button
+                            type="button"
+                            onClick={() => openInlineBulkEditor(index, prod)}
+                            className="inline-flex items-center gap-1 font-semibold text-[#87482D] transition-colors hover:underline"
+                          >
+                            <Pencil className="size-3" />
+                            {activeBulk ? "Edit satuan besar" : "+ Atur satuan besar"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {isEditingInlineBulk && (
+                      <div className="mt-2 rounded-xl border border-[#87482D]/20 bg-[#87482D]/[0.03] p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[#87482D]">
+                            <Package className="size-3.5" />
+                            Atur Satuan Besar — {prod.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingBulkRow(null);
+                              setInlineBulkError("");
+                            }}
+                            aria-label="Tutup pengaturan satuan besar"
+                            className="text-zinc-400 hover:text-zinc-600"
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </div>
+
+                        {inlineBulkError && (
+                          <p className="mb-2 text-xs font-medium text-red-600">
+                            {inlineBulkError}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-end gap-2.5">
+                          <div className="min-w-[160px] flex-1 space-y-1">
+                            <Label className="text-[10px] text-zinc-500">
+                              Satuan Grosir / Besar
+                            </Label>
+                            <Select
+                              value={inlineBulkUnitId}
+                              onChange={(e) => {
+                                setInlineBulkUnitId(e.target.value);
+                                if (!e.target.value) setInlineBulkConversion("");
+                              }}
+                              className="h-9 text-xs"
+                            >
+                              <option value="">Tidak ada satuan besar</option>
+                              {units
+                                .filter((u) => u.id !== prod.baseUnitId)
+                                .map((u) => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.code} - {u.name}
+                                  </option>
+                                ))}
+                            </Select>
+                          </div>
+
+                          <div className="w-40 space-y-1">
+                            <Label className="text-[10px] text-zinc-500">
+                              Isi ({prod.baseUnit.code})
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                min="0.01"
+                                step="any"
+                                placeholder="Contoh: 20"
+                                value={inlineBulkConversion}
+                                onChange={(e) =>
+                                  setInlineBulkConversion(e.target.value)
+                                }
+                                disabled={!inlineBulkUnitId}
+                                className="h-9 pr-12 text-xs font-semibold"
+                              />
+                              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] font-bold text-zinc-400">
+                                {prod.baseUnit.code}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={inlineBulkSaving}
+                              onClick={() => void saveInlineBulkEditor(index, prod)}
+                              className="h-9 bg-[#87482D] text-xs text-white hover:bg-[#6d3a24]"
+                            >
+                              <Check className="size-3.5" />
+                              {inlineBulkSaving ? "Menyimpan..." : "Simpan"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={inlineBulkSaving}
+                              onClick={() => {
+                                setEditingBulkRow(null);
+                                setInlineBulkError("");
+                              }}
+                              className="h-9 text-xs"
+                            >
+                              Batal
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

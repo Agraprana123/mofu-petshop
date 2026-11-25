@@ -1107,7 +1107,12 @@ export function SalesClient({
                   (entry) => entry.id === Number(item.productId)
                 );
                 const availableUnits = product
-                  ? [product.baseUnit, ...product.units.map((unit) => unit.unit)]
+                  ? [
+                      product.baseUnit,
+                      ...product.units
+                        .filter((unit) => unit.unitId !== product.baseUnitId)
+                        .map((unit) => unit.unit),
+                    ]
                   : [];
                 const totalStock = product
                   ? product.batches.reduce(
