@@ -445,7 +445,7 @@ export function PurchasesClient({
       {/* Main Table Card */}
       <div className="overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(24,25,26,0.04),0_16px_40px_-32px_rgba(24,25,26,0.25)]">
         {/* Search & Date Filter header */}
-        <div className="flex flex-col gap-3 border-b border-zinc-100 p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 border-b border-zinc-100 px-5 py-3.5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
@@ -457,31 +457,23 @@ export function PurchasesClient({
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-medium text-zinc-400">
-                  Dari
-                </span>
-                <Input
-                  type="date"
-                  aria-label="Dari tanggal"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="h-9 w-[142px] text-xs"
-                />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-medium text-zinc-400">
-                  Sampai
-                </span>
-                <Input
-                  type="date"
-                  aria-label="Sampai tanggal"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="h-9 w-[142px] text-xs"
-                />
-              </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200/80 bg-zinc-50/50 px-2.5 py-1">
+              <Calendar className="size-3.5 shrink-0 text-zinc-400" />
+              <Input
+                type="date"
+                aria-label="Dari tanggal"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-8 w-[134px] border-0 bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
+              />
+              <span className="text-xs text-zinc-300">—</span>
+              <Input
+                type="date"
+                aria-label="Sampai tanggal"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-8 w-[134px] border-0 bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
+              />
               {(dateFrom || dateTo) && (
                 <Button
                   type="button"
@@ -491,10 +483,10 @@ export function PurchasesClient({
                     setDateFrom("");
                     setDateTo("");
                   }}
-                  className="h-9 px-2.5 text-xs text-zinc-500 hover:text-zinc-800"
+                  className="h-7 px-2 text-[11px] text-zinc-500 hover:bg-white hover:text-zinc-800"
                 >
-                  <X className="size-3.5" />
-                  Reset tanggal
+                  <X className="size-3" />
+                  Reset
                 </Button>
               )}
             </div>
