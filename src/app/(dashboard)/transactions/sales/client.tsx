@@ -269,6 +269,8 @@ export function SalesClient({
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [range, setRange] = useState<RangeFilter>("ALL");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [status, setStatus] = useState<StatusFilter>("ALL");
   const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -312,15 +314,24 @@ export function SalesClient({
   );
 
   const rangeScoped = useMemo(() => {
+    const hasCustomDate = Boolean(dateFrom || dateTo);
+    const fromBound = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const toBound = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
+
     return sales.filter((sale) => {
       const saleDateValue = new Date(sale.date);
+      if (hasCustomDate) {
+        if (fromBound && saleDateValue < fromBound) return false;
+        if (toBound && saleDateValue > toBound) return false;
+        return true;
+      }
       return (
         range === "ALL" ||
         (range === "TODAY" && isSameDay(saleDateValue, now)) ||
         (range === "WEEK" && saleDateValue >= weekStart)
       );
     });
-  }, [sales, range, now, weekStart]);
+  }, [sales, range, dateFrom, dateTo, now, weekStart]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
@@ -745,11 +756,13 @@ export function SalesClient({
                 key={tab.id}
                 onClick={() => {
                   setRange(tab.id);
+                  setDateFrom("");
+                  setDateTo("");
                   setPage(1);
                 }}
                 className={cn(
                   "relative flex shrink-0 items-center gap-1.5 rounded-t-xl px-3 pb-3 pt-1 text-[13px] font-semibold transition-colors",
-                  range === tab.id
+                  range === tab.id && !dateFrom && !dateTo
                     ? "text-[#87482D]"
                     : "text-zinc-400 hover:text-zinc-600"
                 )}
@@ -758,14 +771,14 @@ export function SalesClient({
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px]",
-                    range === tab.id
+                    range === tab.id && !dateFrom && !dateTo
                       ? "bg-[#87482D]/10 text-[#87482D]"
                       : "bg-zinc-100 text-zinc-400"
                   )}
                 >
                   {tab.count}
                 </span>
-                {range === tab.id && (
+                {range === tab.id && !dateFrom && !dateTo && (
                   <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#87482D]" />
                 )}
               </button>
@@ -817,20 +830,74 @@ export function SalesClient({
             })}
           </div>
 
-          <div className="flex flex-col gap-3 px-4 pb-4 pt-1 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                placeholder="Cari no faktur, pelanggan, atau salesman..."
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(1);
-                }}
-                className="pl-9"
-              />
+          <div className="flex flex-col gap-3 px-4 pb-4 pt-1 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                <Input
+                  placeholder="Cari no faktur, pelanggan, atau salesman..."
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-9"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-zinc-400">
+                    Dari
+                  </span>
+                  <Input
+                    type="date"
+                    aria-label="Dari tanggal"
+                    value={dateFrom}
+                    onChange={(event) => {
+                      setDateFrom(event.target.value);
+                      setRange("ALL");
+                      setPage(1);
+                    }}
+                    className="h-9 w-[142px] text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-zinc-400">
+                    Sampai
+                  </span>
+                  <Input
+                    type="date"
+                    aria-label="Sampai tanggal"
+                    value={dateTo}
+                    onChange={(event) => {
+                      setDateTo(event.target.value);
+                      setRange("ALL");
+                      setPage(1);
+                    }}
+                    className="h-9 w-[142px] text-xs"
+                  />
+                </div>
+                {(dateFrom || dateTo) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                      setPage(1);
+                    }}
+                    className="h-9 px-2.5 text-xs text-zinc-500 hover:text-zinc-800"
+                  >
+                    <RotateCcw className="size-3.5" />
+                    Reset tanggal
+                  </Button>
+                )}
+              </div>
             </div>
-            <span className="text-[11px] font-medium text-zinc-400">
+
+            <span className="text-[11px] font-medium text-zinc-400 whitespace-nowrap">
               {filtered.length} transaksi ditemukan
             </span>
           </div>
@@ -853,7 +920,10 @@ export function SalesClient({
                     status
                   } pada periode ini.`}
             </p>
-            {(status !== "ALL" || search.trim() !== "") && (
+            {(status !== "ALL" ||
+              search.trim() !== "" ||
+              dateFrom !== "" ||
+              dateTo !== "") && (
               <Button
                 variant="outline"
                 size="sm"
@@ -861,6 +931,8 @@ export function SalesClient({
                 onClick={() => {
                   setStatus("ALL");
                   setSearch("");
+                  setDateFrom("");
+                  setDateTo("");
                   setPage(1);
                 }}
               >

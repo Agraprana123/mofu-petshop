@@ -119,6 +119,8 @@ export function PurchasesClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState<PurchaseItem | null>(null);
@@ -149,12 +151,27 @@ export function PurchasesClient({
     return override ? { ...found, units: override } : found;
   }
 
-  const filtered = purchases.filter(
-    (p) =>
-      p.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
-      p.supplier.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.supplierRef && p.supplierRef.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filtered = purchases.filter((p) => {
+    const query = search.trim().toLowerCase();
+    const matchSearch =
+      !query ||
+      p.invoiceNo.toLowerCase().includes(query) ||
+      p.supplier.name.toLowerCase().includes(query) ||
+      (p.supplierRef && p.supplierRef.toLowerCase().includes(query));
+    if (!matchSearch) return false;
+
+    const purchaseDateValue = new Date(p.date);
+    if (dateFrom) {
+      const fromBound = new Date(`${dateFrom}T00:00:00`);
+      if (purchaseDateValue < fromBound) return false;
+    }
+    if (dateTo) {
+      const toBound = new Date(`${dateTo}T23:59:59.999`);
+      if (purchaseDateValue > toBound) return false;
+    }
+
+    return true;
+  });
 
   function openCreateModal() {
     setError("");
@@ -427,17 +444,62 @@ export function PurchasesClient({
 
       {/* Main Table Card */}
       <div className="overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(24,25,26,0.04),0_16px_40px_-32px_rgba(24,25,26,0.25)]">
-        {/* Search header */}
-        <div className="flex flex-col gap-3 border-b border-zinc-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
-            <Input
-              placeholder="Cari no faktur atau supplier..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+        {/* Search & Date Filter header */}
+        <div className="flex flex-col gap-3 border-b border-zinc-100 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+              <Input
+                placeholder="Cari no faktur atau supplier..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-zinc-400">
+                  Dari
+                </span>
+                <Input
+                  type="date"
+                  aria-label="Dari tanggal"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-9 w-[142px] text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-medium text-zinc-400">
+                  Sampai
+                </span>
+                <Input
+                  type="date"
+                  aria-label="Sampai tanggal"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-9 w-[142px] text-xs"
+                />
+              </div>
+              {(dateFrom || dateTo) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                  className="h-9 px-2.5 text-xs text-zinc-500 hover:text-zinc-800"
+                >
+                  <X className="size-3.5" />
+                  Reset tanggal
+                </Button>
+              )}
+            </div>
           </div>
+
           <span className="whitespace-nowrap text-[11px] font-medium text-zinc-400">
             {filtered.length} transaksi pembelian
           </span>
@@ -449,19 +511,47 @@ export function PurchasesClient({
             <span className="grid size-14 place-items-center rounded-2xl bg-zinc-100 text-zinc-400">
               <FileText className="size-6" />
             </span>
-            <p className="mt-4 text-sm font-semibold text-zinc-700">
-              Belum ada faktur pembelian
-            </p>
-            <p className="mt-1 max-w-xs text-xs text-zinc-400">
-              Catat pembelian pertama untuk menambah stok dan harga jual batch.
-            </p>
-            <button
-              onClick={openCreateModal}
-              className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#87482D] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#6d3a24]"
-            >
-              <Plus className="size-3.5" />
-              Buat Faktur
-            </button>
+            {purchases.length > 0 &&
+            (search.trim() !== "" || dateFrom !== "" || dateTo !== "") ? (
+              <>
+                <p className="mt-4 text-sm font-semibold text-zinc-700">
+                  Tidak ada faktur pembelian yang sesuai
+                </p>
+                <p className="mt-1 max-w-xs text-xs text-zinc-400">
+                  Coba ubah kata kunci pencarian atau rentang tanggal filter.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setSearch("");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  <X className="size-3.5" />
+                  Reset filter
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 text-sm font-semibold text-zinc-700">
+                  Belum ada faktur pembelian
+                </p>
+                <p className="mt-1 max-w-xs text-xs text-zinc-400">
+                  Catat pembelian pertama untuk menambah stok dan harga jual batch.
+                </p>
+                <button
+                  onClick={openCreateModal}
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#87482D] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#6d3a24]"
+                >
+                  <Plus className="size-3.5" />
+                  Buat Faktur
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
