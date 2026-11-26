@@ -134,6 +134,11 @@ export function ProductsClient({
   const [bulkUnitId, setBulkUnitId] = useState("");
   const [bulkConversion, setBulkConversion] = useState("");
 
+  // Harga & margin khusus (auto-sinkron saat harga beli/jual diisi)
+  const [formBuyPrice, setFormBuyPrice] = useState("");
+  const [formSellPrice, setFormSellPrice] = useState("");
+  const [formMarginPercent, setFormMarginPercent] = useState("");
+
   // Delete dialog state
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deleteWarning, setDeleteWarning] = useState<string | null>(null);
@@ -196,6 +201,32 @@ export function ProductsClient({
     );
   }, [historyItems]);
 
+  function syncMarginFromPrices(buyStr: string, sellStr: string) {
+    const buy = Number(buyStr);
+    const sell = Number(sellStr);
+    if (
+      buyStr.trim() !== "" &&
+      sellStr.trim() !== "" &&
+      Number.isFinite(buy) &&
+      Number.isFinite(sell) &&
+      buy > 0 &&
+      sell >= 0
+    ) {
+      const margin = ((sell - buy) / buy) * 100;
+      setFormMarginPercent(String(Number(margin.toFixed(2))));
+    }
+  }
+
+  function handleBuyPriceChange(value: string) {
+    setFormBuyPrice(value);
+    syncMarginFromPrices(value, formSellPrice);
+  }
+
+  function handleSellPriceChange(value: string) {
+    setFormSellPrice(value);
+    syncMarginFromPrices(formBuyPrice, value);
+  }
+
   function openCreateModal() {
     setEditing(null);
     setError("");
@@ -204,6 +235,9 @@ export function ProductsClient({
     setFormBaseUnitId("");
     setBulkUnitId("");
     setBulkConversion("");
+    setFormBuyPrice("");
+    setFormSellPrice("");
+    setFormMarginPercent("");
     setModalOpen(true);
   }
 
@@ -219,6 +253,9 @@ export function ProductsClient({
     setBulkConversion(
       existingBulk ? String(Number(existingBulk.conversionToBase)) : ""
     );
+    setFormBuyPrice(product.buyPrice !== null ? String(product.buyPrice) : "");
+    setFormSellPrice(product.sellPrice !== null ? String(product.sellPrice) : "");
+    setFormMarginPercent(product.marginPercent?.toString() ?? "");
     setModalOpen(true);
   }
 
@@ -955,7 +992,8 @@ export function ProductsClient({
                     min="0"
                     step="1"
                     placeholder="0"
-                    defaultValue={editing?.buyPrice ?? ""}
+                    value={formBuyPrice}
+                    onChange={(e) => handleBuyPriceChange(e.target.value)}
                     className="pl-9"
                   />
                 </div>
@@ -982,7 +1020,8 @@ export function ProductsClient({
                     min="0"
                     step="1"
                     placeholder="0"
-                    defaultValue={editing?.sellPrice ?? ""}
+                    value={formSellPrice}
+                    onChange={(e) => handleSellPriceChange(e.target.value)}
                     className="pl-9"
                   />
                 </div>
@@ -1024,12 +1063,13 @@ export function ProductsClient({
                   id="marginPercent"
                   name="marginPercent"
                   type="number"
-                  step="0.1"
+                  step="0.01"
                   placeholder="Ikut margin kategori"
-                  defaultValue={editing?.marginPercent?.toString() ?? ""}
+                  value={formMarginPercent}
+                  onChange={(e) => setFormMarginPercent(e.target.value)}
                 />
                 <p className="text-[10px] text-zinc-400">
-                  Dipakai saat harga jual produk masih kosong.
+                  Otomatis menyesuaikan dari harga beli &amp; jual, atau isi manual.
                 </p>
               </div>
             </div>
