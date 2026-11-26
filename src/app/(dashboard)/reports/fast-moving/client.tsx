@@ -8,7 +8,11 @@ import {
   Award,
   AlertCircle,
   Package,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+
+const PAGE_SIZE = 10;
 import { Input } from "@/components/ui/input";
 
 interface FastMovingItem {
@@ -25,12 +29,20 @@ interface FastMovingItem {
 
 export function FastMovingClient({ items }: { items: FastMovingItem[] }) {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const filtered = items.filter(
     (item) =>
       item.name.toLowerCase().includes(search.toLowerCase()) ||
       item.code.toLowerCase().includes(search.toLowerCase()) ||
       item.categoryName.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
   );
 
   const topProduct = items[0];
@@ -90,7 +102,10 @@ export function FastMovingClient({ items }: { items: FastMovingItem[] }) {
             <Input
               placeholder="Cari produk terlaris..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="pl-9 h-10 rounded-xl"
             />
           </div>
@@ -122,8 +137,8 @@ export function FastMovingClient({ items }: { items: FastMovingItem[] }) {
                   </td>
                 </tr>
               ) : (
-                filtered.map((item, i) => {
-                  const rank = i + 1;
+                paginated.map((item, i) => {
+                  const rank = (currentPage - 1) * PAGE_SIZE + i + 1;
                   return (
                     <tr key={item.id} className="hover:bg-zinc-50/70 transition-colors">
                       <td className="px-5 py-3.5 text-center">
@@ -175,6 +190,74 @@ export function FastMovingClient({ items }: { items: FastMovingItem[] }) {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-4 border-t border-zinc-100 bg-zinc-50/40">
+            <span className="text-xs text-zinc-500">
+              Menampilkan{" "}
+              <span className="font-semibold text-zinc-700">
+                {(currentPage - 1) * PAGE_SIZE + 1}–
+                {Math.min(currentPage * PAGE_SIZE, filtered.length)}
+              </span>{" "}
+              dari <span className="font-semibold text-zinc-700">{filtered.length}</span> produk
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="p-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Halaman sebelumnya"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {Array.from({ length: totalPages }, (_, idx) => idx + 1)
+                .filter(
+                  (p) =>
+                    p === 1 ||
+                    p === totalPages ||
+                    Math.abs(p - currentPage) <= 1
+                )
+                .reduce<(number | "ellipsis")[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && p - arr[idx - 1] > 1) acc.push("ellipsis");
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === "ellipsis" ? (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      className="px-2 text-xs text-zinc-400"
+                    >
+                      …
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      className={`min-w-8 h-8 px-2.5 rounded-lg text-xs font-semibold transition-colors ${
+                        p === currentPage
+                          ? "bg-[#87482D] text-white shadow-sm"
+                          : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Halaman berikutnya"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
