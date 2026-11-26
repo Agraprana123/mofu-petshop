@@ -171,9 +171,7 @@ export function ProductsClient({
   });
 
   const activeCount = products.filter((p) => p.isActive).length;
-  const lowStockCount = products.filter(
-    (p) => p.totalStock < p.minStock
-  ).length;
+  const inactiveCount = products.length - activeCount;
   const unpricedCount = products.filter(
     (p) => (p.effectiveSellPrice ?? 0) <= 0
   ).length;
@@ -403,10 +401,10 @@ export function ProductsClient({
             tone: "bg-emerald-50 text-emerald-600",
           },
           {
-            label: "Stok Kritis",
-            value: lowStockCount,
-            icon: AlertTriangle,
-            tone: "bg-amber-50 text-amber-600",
+            label: "Produk Nonaktif",
+            value: inactiveCount,
+            icon: Ban,
+            tone: "bg-zinc-100 text-zinc-500",
           },
           {
             label: "Harga Belum Diatur",
@@ -520,18 +518,18 @@ export function ProductsClient({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1140px] text-sm">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-100 bg-zinc-50/60 text-left text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400">
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Produk</th>
-                  <th className="px-4 py-3">Kategori</th>
-                  <th className="px-4 py-3">Satuan Besar</th>
-                  <th className="px-4 py-3">Harga Beli</th>
-                  <th className="px-4 py-3">Harga Jual</th>
-                  <th className="px-4 py-3 text-center">Stok Gudang</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Aksi</th>
+                  <th className="py-3 pl-4 pr-2">#</th>
+                  <th className="px-3 py-3">Produk</th>
+                  <th className="px-3 py-3">Kategori</th>
+                  <th className="px-3 py-3">Satuan Besar</th>
+                  <th className="px-3 py-3">Harga Beli</th>
+                  <th className="px-3 py-3">Harga Jual</th>
+                  <th className="px-3 py-3 text-center">Stok Gudang</th>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="py-3 pl-2 pr-4 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -542,14 +540,14 @@ export function ProductsClient({
                       !p.isActive ? "bg-zinc-50/40 opacity-75" : ""
                     }`}
                   >
-                    <td className="px-4 py-3 text-xs text-zinc-400">
+                    <td className="py-3 pl-4 pr-2 text-xs text-zinc-400">
                       {(currentPage - 1) * PAGE_SIZE + i + 1}
                     </td>
 
                     {/* Produk: Name + Code */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="font-semibold text-zinc-900">{p.name}</div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
                         <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-zinc-500">
                           {p.code}
                         </span>
@@ -558,18 +556,18 @@ export function ProductsClient({
                     </td>
 
                     {/* Kategori */}
-                    <td className="px-4 py-3 text-xs font-medium text-zinc-600">
+                    <td className="px-3 py-3 text-xs font-medium text-zinc-600">
                       {p.category.name}
                     </td>
 
                     {/* Satuan Besar */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {p.units.length > 0 ? (
                         <div>
                           {p.units.map((pu) => (
                             <div
                               key={pu.id}
-                              className="flex items-center gap-1.5"
+                              className="flex items-center gap-1.5 whitespace-nowrap"
                             >
                               <span className="rounded bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#87482D]">
                                 {pu.unit.code}
@@ -587,7 +585,7 @@ export function ProductsClient({
                     </td>
 
                     {/* Harga Beli */}
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-3">
                       <div
                         className={`text-[13px] font-semibold ${
                           (p.effectiveBuyPrice ?? 0) > 0
@@ -603,7 +601,7 @@ export function ProductsClient({
                     </td>
 
                     {/* Harga Jual */}
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-3 py-3">
                       <div
                         className={`text-sm font-bold ${
                           (p.effectiveSellPrice ?? 0) > 0
@@ -641,7 +639,7 @@ export function ProductsClient({
                     </td>
 
                     {/* Stok */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="whitespace-nowrap px-3 py-3 text-center">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${stockTone(
                           p
@@ -655,7 +653,7 @@ export function ProductsClient({
                     </td>
 
                     {/* Status & Quick Toggle */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="whitespace-nowrap px-3 py-3 text-center">
                       <button
                         onClick={() => handleToggleActive(p)}
                         title={
@@ -684,25 +682,25 @@ export function ProductsClient({
                     </td>
 
                     {/* Aksi */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="whitespace-nowrap py-3 pl-2 pr-4">
+                      <div className="flex items-center justify-end gap-0.5">
                         <button
                           onClick={() => handleOpenHistory(p)}
-                          className="grid size-9 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-sky-50 hover:text-sky-600"
+                          className="grid size-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-sky-50 hover:text-sky-600"
                           title="Riwayat Penjualan"
                         >
                           <History className="size-4" />
                         </button>
                         <button
                           onClick={() => openEditModal(p)}
-                          className="grid size-9 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-[#87482D]/8 hover:text-[#87482D]"
+                          className="grid size-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-[#87482D]/8 hover:text-[#87482D]"
                           title="Edit Produk"
                         >
                           <Pencil className="size-4" />
                         </button>
                         <button
                           onClick={() => handleOpenDelete(p)}
-                          className="grid size-9 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          className="grid size-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
                           title="Hapus Produk"
                         >
                           <Trash2 className="size-4" />
