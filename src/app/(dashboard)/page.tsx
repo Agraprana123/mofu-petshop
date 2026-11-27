@@ -66,7 +66,8 @@ export default async function DashboardPage() {
       LEFT JOIN units u ON u.id = p.base_unit_id
       WHERE p.is_active = true
       GROUP BY p.id, p.name, p.code, u.code, p.min_stock
-      HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
+      HAVING COALESCE(SUM(sb.qty_remaining), 0) <= 0
+          OR COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
       ORDER BY total_remaining ASC
       LIMIT 5
     `,
@@ -78,7 +79,8 @@ export default async function DashboardPage() {
         LEFT JOIN stock_batches sb ON sb.product_id = p.id
         WHERE p.is_active = true
         GROUP BY p.id
-        HAVING COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
+        HAVING COALESCE(SUM(sb.qty_remaining), 0) <= 0
+            OR COALESCE(SUM(sb.qty_remaining), 0) < p.min_stock
       ) sub
     `,
   ]);

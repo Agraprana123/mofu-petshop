@@ -62,7 +62,7 @@ export default async function LowStockPage() {
       : null;
 
     let status: "OUT_OF_STOCK" | "CRITICAL" | "LOW" | "SAFE" = "SAFE";
-    if (minStock > 0 && currentStock === 0) {
+    if (currentStock <= 0) {
       status = "OUT_OF_STOCK";
     } else if (minStock > 0 && currentStock <= minStock * 0.5) {
       status = "CRITICAL";
