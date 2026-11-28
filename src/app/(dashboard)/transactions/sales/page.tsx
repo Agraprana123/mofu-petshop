@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default async function SalesPage() {
   const [sales, customers, salesmen, products] = await Promise.all([
     prisma.sale.findMany({
-      orderBy: { date: "desc" },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }],
       include: {
         customer: true,
         salesman: true,
